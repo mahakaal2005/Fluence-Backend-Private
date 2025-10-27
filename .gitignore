@@ -110,6 +110,12 @@ redis_data/
 # Seed files with sensitive data
 seed-admin-transactions.sql
 
+# Development seed and test scripts
+**/scripts/seed-*.js
+**/seed-*.js
+**/check-*.js
+**/*-seed.js
+
 
 
 
