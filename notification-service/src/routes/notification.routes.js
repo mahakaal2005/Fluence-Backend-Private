@@ -8,16 +8,16 @@ const router = Router();
 router.use(verifyAuthToken());
 
 // Notification management routes
-router.get('/notifications', NotificationController.getNotifications);
-router.get('/notifications/unread-count', NotificationController.getUnreadCount);
-router.get('/notifications/type/:type', NotificationController.getNotificationsByType);
-router.get('/notifications/date-range', NotificationController.getNotificationsByDateRange);
-router.get('/notifications/stats', NotificationController.getNotificationStats);
+router.get('/', NotificationController.getNotifications);
+router.get('/unread-count', NotificationController.getUnreadCount);
+router.get('/type/:type', NotificationController.getNotificationsByType);
+router.get('/date-range', NotificationController.getNotificationsByDateRange);
+router.get('/stats', NotificationController.getNotificationStats);
 
 // Notification actions
-router.put('/notifications/:notificationId/read', NotificationController.markAsRead);
-router.put('/notifications/read-all', NotificationController.markAllAsRead);
-router.delete('/notifications/:notificationId', NotificationController.deleteNotification);
+router.put('/:notificationId/read', NotificationController.markAsRead);
+router.put('/read-all', NotificationController.markAllAsRead);
+router.delete('/:notificationId', NotificationController.deleteNotification);
 
 // Notification settings
 router.get('/settings', NotificationController.getNotificationSettings);

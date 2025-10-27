@@ -24,24 +24,25 @@ async function startServer() {
       }
     }
 
-    // Start server
-    const server = app.listen(config.port, () => {
+    // Start server - listen on all network interfaces
+    const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`🚀 Merchant Onboarding Service running on port ${config.port}`);
       console.log(`📊 Environment: ${config.nodeEnv}`);
       console.log(`🔗 Health check: http://localhost:${config.port}/health`);
       console.log(`📚 API Documentation: http://localhost:${config.port}/`);
+      console.log(`🌐 Network: Listening on all interfaces (0.0.0.0:${config.port})`);
     });
 
     // Graceful shutdown
     const gracefulShutdown = (signal) => {
       console.log(`\n${signal} received. Shutting down gracefully...`);
-      
+
       server.close((err) => {
         if (err) {
           console.error('Error during server shutdown:', err);
           process.exit(1);
         }
-        
+
         console.log('Server closed successfully');
         process.exit(0);
       });

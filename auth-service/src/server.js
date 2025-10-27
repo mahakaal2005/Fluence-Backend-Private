@@ -21,9 +21,10 @@ const server = createServer(app);
 
 // Start server after database initialization
 initializeDatabase().then(() => {
-  server.listen(port, () => {
+  server.listen(port, '0.0.0.0', () => {
     console.log(`Auth service listening on port ${port}`);
-    
+    console.log(`🌐 Network: Listening on all interfaces (0.0.0.0:${port})`);
+
     // Initialize background jobs
     BackgroundJobsService.initialize();
   });
