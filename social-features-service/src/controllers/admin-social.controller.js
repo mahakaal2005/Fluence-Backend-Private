@@ -52,10 +52,38 @@ export class AdminSocialController {
       const posts = await pool.query(query, params);
       console.log('✅ [POSTS] Found', posts.rows.length, 'posts');
 
+      // Check for duplicates for each post
+      const postsWithDuplicateCheck = await Promise.all(
+        posts.rows.map(async (post) => {
+          if (!post.content_hash) {
+            // Generate hash if missing
+            post.content_hash = crypto.createHash('sha256')
+              .update(post.content.toLowerCase().trim())
+              .digest('hex');
+          }
+
+          // Check for duplicates within 7 days
+          const duplicates = await pool.query(
+            `SELECT COUNT(*) as count
+             FROM social_posts
+             WHERE content_hash = $1 
+             AND id != $2
+             AND created_at > NOW() - INTERVAL '7 days'`,
+            [post.content_hash, post.id]
+          );
+
+          return {
+            ...post,
+            has_duplicates: parseInt(duplicates.rows[0].count) > 0,
+            duplicate_count: parseInt(duplicates.rows[0].count)
+          };
+        })
+      );
+
       res.status(StatusCodes.OK).json({
         success: true,
         data: {
-          posts: posts.rows,
+          posts: postsWithDuplicateCheck,
           pagination: {
             limit: parseInt(limit),
             offset: parseInt(offset),

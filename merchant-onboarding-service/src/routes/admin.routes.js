@@ -12,12 +12,16 @@ import {
   getSlaViolations,
   sendSlaReminders
 } from '../controllers/admin.controller.js';
+import { getRecentApplicationReviews } from '../controllers/admin-activity.controller.js';
 
 const router = Router();
 
 // All admin routes require authentication and admin role
 router.use(verifyAuthToken());
 router.use(requireAdmin());
+
+// Admin activity feed
+router.get('/activity/recent-reviews', getRecentApplicationReviews);
 
 // Application management
 router.get('/applications', getAllApplications);

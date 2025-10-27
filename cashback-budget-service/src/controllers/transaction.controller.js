@@ -160,8 +160,58 @@ export class TransactionController {
       const overallResult = await pool.query(overallQuery, overallParams);
       const overall = overallResult.rows[0];
 
+      // Calculate growth: compare last 7 days vs previous 7 days
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+      let recentVolumeQuery = `
+        SELECT SUM(cashback_amount) as volume
+        FROM cashback_transactions
+        WHERE created_at > $1
+      `;
+      const recentVolumeParams = [sevenDaysAgo];
+
+      if (req.user.role !== 'admin') {
+        recentVolumeQuery += ' AND customer_id = $2';
+        recentVolumeParams.push(req.user.id);
+      }
+
+      let previousVolumeQuery = `
+        SELECT SUM(cashback_amount) as volume
+        FROM cashback_transactions
+        WHERE created_at > $1 AND created_at <= $2
+      `;
+      const previousVolumeParams = [fourteenDaysAgo, sevenDaysAgo];
+
+      if (req.user.role !== 'admin') {
+        previousVolumeQuery += ' AND customer_id = $3';
+        previousVolumeParams.push(req.user.id);
+      }
+
+      const [recentVolumeResult, previousVolumeResult] = await Promise.all([
+        pool.query(recentVolumeQuery, recentVolumeParams),
+        pool.query(previousVolumeQuery, previousVolumeParams)
+      ]);
+
+      const recentVolume = parseFloat(recentVolumeResult.rows[0].volume || 0);
+      const previousVolume = parseFloat(previousVolumeResult.rows[0].volume || 0);
+
+      let volumeGrowth = 0;
+      if (previousVolume > 0) {
+        volumeGrowth = ((recentVolume - previousVolume) / previousVolume) * 100;
+      } else if (recentVolume > 0) {
+        volumeGrowth = 100; // 100% growth if we had 0 before
+      }
+
+      // Round to 1 decimal place
+      volumeGrowth = Math.round(volumeGrowth * 10) / 10;
+
       const analytics = {
         totalVolume: parseFloat(overall.total_volume || 0),
+        volumeGrowth: volumeGrowth,
+        recentVolume: recentVolume,
+        previousVolume: previousVolume,
         pending: parseInt(overall.pending || 0),
         processed: parseInt(overall.processed || 0),
         failed: parseInt(overall.failed || 0),
@@ -175,6 +225,9 @@ export class TransactionController {
       console.log('   Transactions found:', result.rows.length);
       console.log('   Total in DB:', total);
       console.log('   Total volume: ₹', analytics.totalVolume.toFixed(2));
+      console.log('   Volume growth:', volumeGrowth.toFixed(1) + '%');
+      console.log('   Recent volume (7d): ₹', recentVolume.toFixed(2));
+      console.log('   Previous volume (7-14d): ₹', previousVolume.toFixed(2));
       console.log('   Success rate:', successRate + '%');
       console.log('   Status breakdown:', {
         pending: analytics.pending,
@@ -224,6 +277,9 @@ export class TransactionController {
           },
           analytics: {
             totalVolume: analytics.totalVolume,
+            volumeGrowth: analytics.volumeGrowth,
+            recentVolume: analytics.recentVolume,
+            previousVolume: analytics.previousVolume,
             successRate: parseInt(successRate),
             pending: analytics.pending,
             processed: analytics.processed,

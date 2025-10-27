@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import { verifyAuthToken } from '../middleware/auth.js';
 import { AdminSocialController } from '../controllers/admin-social.controller.js';
+import { getRecentVerifications } from '../controllers/admin-activity.controller.js';
 
 const router = Router();
 
 // All admin routes require authentication
 router.use(verifyAuthToken());
+
+// Admin activity feed
+router.get('/activity/recent-verifications', getRecentVerifications);
 
 // Admin post management routes
 router.get('/posts/pending', AdminSocialController.getPendingPosts);

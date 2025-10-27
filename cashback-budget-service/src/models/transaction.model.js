@@ -15,7 +15,7 @@ export class TransactionModel {
 
     if (merchantId) {
       paramCount++;
-      query +=  AND merchant_id = FINAL_FIX.js{paramCount};
+      query += ` AND merchant_id = $${paramCount}`;
       params.push(merchantId);
     }
 
