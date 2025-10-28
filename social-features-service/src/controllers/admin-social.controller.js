@@ -3,6 +3,32 @@ import { getPool } from '../config/database.js';
 import { ApiError } from '../middleware/error.js';
 import crypto from 'crypto';
 
+/**
+ * Sanitize text by removing replacement characters and invalid UTF-8 sequences
+ */
+function sanitizeText(text) {
+  if (!text) return text;
+  const original = text;
+  // Remove U+FFFD (replacement character) and other problematic characters
+  const sanitized = text.replace(/\uFFFD/g, '').replace(/�/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  if (original !== sanitized) {
+    console.log(`🧹 [SANITIZE] Cleaned text: "${original.substring(0, 50)}" -> "${sanitized.substring(0, 50)}"`);
+  }
+  return sanitized;
+}
+
+/**
+ * Sanitize post object by cleaning all text fields
+ */
+function sanitizePost(post) {
+  return {
+    ...post,
+    content: sanitizeText(post.content),
+    username: sanitizeText(post.username),
+    display_name: sanitizeText(post.display_name),
+  };
+}
+
 export class AdminSocialController {
   /**
    * Get all posts pending review (admin only)
@@ -52,7 +78,7 @@ export class AdminSocialController {
       const posts = await pool.query(query, params);
       console.log('✅ [POSTS] Found', posts.rows.length, 'posts');
 
-      // Check for duplicates for each post
+      // Check for duplicates for each post and sanitize text
       const postsWithDuplicateCheck = await Promise.all(
         posts.rows.map(async (post) => {
           if (!post.content_hash) {
@@ -72,11 +98,11 @@ export class AdminSocialController {
             [post.content_hash, post.id]
           );
 
-          return {
+          return sanitizePost({
             ...post,
             has_duplicates: parseInt(duplicates.rows[0].count) > 0,
             duplicate_count: parseInt(duplicates.rows[0].count)
-          };
+          });
         })
       );
 
