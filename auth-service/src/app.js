@@ -35,8 +35,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(helmet(
-  app.use(securityHeaders());
+app.use(helmet());
+app.use(securityHeaders());
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
