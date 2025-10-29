@@ -16,10 +16,27 @@ const config = getConfig();
 
 app.set('trust proxy', 1);
 
-// CORS middleware removed - using explicit headers instead
+// Enable CORS for web app
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
 
-app.use(helmet());
-app.use(securityHeaders());
+    // Allow any localhost origin (for development)
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+
+    // Block other origins
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(helmet(
+  app.use(securityHeaders());
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
