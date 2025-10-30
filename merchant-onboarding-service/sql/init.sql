@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS merchant_profiles (
   tax_id VARCHAR(100),
   bank_account_details JSONB,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'inactive')),
+  -- Merchant auth fields (no dependency on users table)
+  password_hash TEXT,
+  password_set_at TIMESTAMPTZ,
+  login_enabled BOOLEAN DEFAULT true,
+  last_login_at TIMESTAMPTZ,
+  otp_code TEXT,
+  otp_expires_at TIMESTAMPTZ,
+  otp_attempts INTEGER DEFAULT 0,
   approved_at TIMESTAMPTZ DEFAULT NOW(),
   approved_by UUID, -- References auth service admin users
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -86,6 +94,8 @@ CREATE INDEX IF NOT EXISTS idx_merchant_applications_reviewed_by ON merchant_app
 CREATE INDEX IF NOT EXISTS idx_merchant_profiles_user_id ON merchant_profiles (user_id);
 CREATE INDEX IF NOT EXISTS idx_merchant_profiles_status ON merchant_profiles (status);
 CREATE INDEX IF NOT EXISTS idx_merchant_profiles_approved_at ON merchant_profiles (approved_at);
+CREATE INDEX IF NOT EXISTS idx_merchant_profiles_email ON merchant_profiles (email);
+CREATE INDEX IF NOT EXISTS idx_merchant_profiles_login_enabled ON merchant_profiles (login_enabled);
 
 CREATE INDEX IF NOT EXISTS idx_application_status_history_application_id ON application_status_history (application_id);
 CREATE INDEX IF NOT EXISTS idx_application_status_history_created_at ON application_status_history (created_at);

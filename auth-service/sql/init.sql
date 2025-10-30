@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   auth_provider TEXT NOT NULL DEFAULT 'password' CHECK (auth_provider IN ('password','google','facebook','phone','guest')),
   provider_id TEXT,
   phone TEXT,
+  date_of_birth DATE,
   role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','merchant','moderator')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','deleted','flagged')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

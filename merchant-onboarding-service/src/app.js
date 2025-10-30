@@ -11,6 +11,7 @@ import { errorHandler, notFoundHandler } from './middleware/error.js';
 import applicationRoutes from './routes/application.routes.js';
 import profileRoutes from './routes/profile.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import authRoutes from './routes/auth.routes.js';
 
 const app = express();
 const config = getConfig();
@@ -87,6 +88,7 @@ app.get('/health', (req, res) => {
 app.use('/api/applications', applicationRoutes);
 app.use('/api/profiles', profileRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/merchant/auth', authRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -99,7 +101,8 @@ app.get('/', (req, res) => {
       health: '/health',
       applications: '/api/applications',
       profiles: '/api/profiles',
-      admin: '/api/admin'
+      admin: '/api/admin',
+      merchantAuth: '/api/merchant/auth'
     }
   });
 });
