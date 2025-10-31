@@ -16,12 +16,64 @@ export class TransactionController {
         });
       }
 
-      const transactionData = {
-        ...req.body,
-        userId: req.user.id
-      };
+      const { amount, type, campaignId, customerId, description, metadata } = req.body;
 
-      const transaction = await TransactionModel.create(transactionData);
+      if (type !== 'cashback') {
+        throw new Error('Only cashback transactions are supported');
+      }
+
+      // Get campaign to derive merchant and percentage
+      const { CampaignModel } = await import('../models/campaign.model.js');
+      const campaign = await CampaignModel.getCampaignById(campaignId);
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      // Ensure original transaction id (required by schema)
+      const { randomUUID } = await import('crypto');
+      const originalTransactionId = req.body.originalTransactionId || randomUUID();
+
+      const transaction = await TransactionModel.createTransaction({
+        merchantId: campaign.merchant_id,
+        campaignId,
+        customerId,
+        originalTransactionId,
+        cashbackAmount: amount,
+        cashbackPercentage: campaign.cashback_percentage
+      });
+
+      // Also create a pending points entry in Points Wallet Service for the user
+      try {
+        const { getConfig } = await import('../config/index.js');
+        const config = getConfig();
+        const pointsBase = config.services.points;
+
+        // Build a JWT-like header for the target customer (points service trusts payload parsing)
+        const header = { alg: 'none', typ: 'JWT' };
+        const toBase64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+        const payload = { sub: customerId, email: `${customerId}@internal`, role: 'user' };
+        const customerJwt = `${toBase64(header)}.${toBase64(payload)}.`;
+
+        const earnBody = {
+          amount: Math.round(Number(amount) || 0),
+          transactionType: 'cashback',
+          description: `Cashback pending (txn ${transaction.id})`,
+          referenceId: transaction.id,
+          socialPostRequired: true
+        };
+
+        await fetch(`${pointsBase}/api/points/earn`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${customerJwt}`
+          },
+          body: JSON.stringify(earnBody)
+        });
+      } catch (earnErr) {
+        // Do not block transaction creation if points service call fails
+        console.error('Failed to enqueue pending points for transaction:', transaction.id, earnErr);
+      }
 
       res.status(201).json({
         success: true,
@@ -421,6 +473,60 @@ export class TransactionController {
       }
 
       const processedTransaction = await TransactionModel.process(id);
+
+      // Credit user's wallet points in Points Wallet Service
+      try {
+        const { getConfig } = await import('../config/index.js');
+        const config = getConfig();
+        const baseUrl = config.services.points;
+        const merchantBase = config.services.merchant;
+
+        // Build a minimal JWT-like token acceptable by the points service middleware
+        const payload = {
+          sub: processedTransaction.customer_id,
+          email: `${processedTransaction.customer_id}@internal`,
+          role: 'user'
+        };
+        const header = { alg: 'none', typ: 'JWT' };
+        const toBase64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+        const fakeJwt = `${toBase64(header)}.${toBase64(payload)}.`;
+
+        // Try to resolve merchant name for description enrichment
+        let merchantName = null;
+        try {
+          const adminPayload = { sub: 'system', email: 'system@internal', role: 'admin' };
+          const adminJwt = `${toBase64(header)}.${toBase64(adminPayload)}.`;
+          const resp = await fetch(`${merchantBase}/api/admin/merchants?merchantId=${processedTransaction.merchant_id}`, {
+            headers: { 'Authorization': `Bearer ${adminJwt}` }
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const first = Array.isArray(data?.data) ? data.data.find(m => m.id === processedTransaction.merchant_id) : null;
+            merchantName = first?.business_name || first?.businessName || null;
+          }
+        } catch {}
+
+        const body = {
+          amount: Number(processedTransaction.cashback_amount),
+          transactionType: 'cashback',
+          description: merchantName
+            ? `Cashback from ${merchantName} (txn ${processedTransaction.id})`
+            : `Cashback credited (txn ${processedTransaction.id})`,
+          referenceId: processedTransaction.id
+        };
+
+        await fetch(`${baseUrl}/api/points/earn`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${fakeJwt}`
+          },
+          body: JSON.stringify(body)
+        });
+      } catch (creditError) {
+        // Don't fail the processing if crediting points fails; log for later retries
+        console.error('Failed to credit points for transaction:', id, creditError);
+      }
 
       res.json({
         success: true,

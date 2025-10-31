@@ -4,7 +4,29 @@ import { ApiError } from '../middleware/error.js';
 import { MerchantApplicationModel } from '../models/merchant-application.model.js';
 import { NotificationService } from '../services/notification.service.js';
 
+function formatAddressString(addressValue) {
+  try {
+    const obj = typeof addressValue === 'string' ? JSON.parse(addressValue) : addressValue;
+    if (!obj || typeof obj !== 'object') return String(addressValue || '');
+    const parts = [obj.street, obj.city, obj.state, obj.zipCode, obj.country]
+      .filter(Boolean)
+      .map((s) => String(s).trim())
+      .filter((s) => s.length > 0);
+    return parts.join(', ');
+  } catch {
+    return String(addressValue || '');
+  }
+}
+
 // Validation schemas
+const addressSchema = z.object({
+  street: z.string().min(1),
+  city: z.string().min(1),
+  state: z.string().min(1),
+  zipCode: z.string().min(1),
+  country: z.string().min(1)
+});
+
 const applicationSchema = z.object({
   businessName: z.string().min(1).max(255),
   businessType: z.enum([
@@ -35,7 +57,7 @@ const applicationSchema = z.object({
   contactPerson: z.string().min(1).max(255),
   email: z.string().email().max(255),
   phone: z.string().min(1).max(20),
-  businessAddress: z.string().min(1),
+  businessAddress: addressSchema,
   businessLicense: z.string().optional(),
   taxId: z.string().optional(),
   bankAccountDetails: z.object({
@@ -58,29 +80,20 @@ const statusUpdateSchema = z.object({
  */
 export async function submitApplication(req, res, next) {
   try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
-    }
-
-    // Check if user already has an application
-    const hasExisting = await MerchantApplicationModel.hasExistingApplication(userId);
-    if (hasExisting) {
-      throw new ApiError(StatusCodes.CONFLICT, 'User already has a pending or approved application');
-    }
-
-    // Check application limit
-    const appCount = await MerchantApplicationModel.getApplicationCountByUser(userId);
-    const maxApplications = parseInt(process.env.MAX_APPLICATIONS_PER_USER || '3');
-    if (appCount >= maxApplications) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, `Maximum ${maxApplications} applications allowed per user`);
-    }
-
     const applicationData = applicationSchema.parse(req.body);
-    applicationData.userId = userId;
+
+    // Ensure only one application per email (pending or approved)
+    const existsForEmail = await MerchantApplicationModel.hasExistingApplicationByEmail(applicationData.email);
+    if (existsForEmail) {
+      throw new ApiError(StatusCodes.CONFLICT, 'An application already exists for this email');
+    }
 
     const application = await MerchantApplicationModel.createApplication(applicationData);
+
+    // Format address for response
+    if (application && application.business_address) {
+      application.business_address = formatAddressString(application.business_address);
+    }
 
     // Send notification
     try {
@@ -116,9 +129,14 @@ export async function getUserApplications(req, res, next) {
 
     const applications = await MerchantApplicationModel.getApplicationByUserId(userId);
 
+    const formatted = (applications || []).map((a) => ({
+      ...a,
+      business_address: formatAddressString(a.business_address)
+    }));
+
     res.status(StatusCodes.OK).json({
       success: true,
-      data: applications
+      data: formatted
     });
   } catch (err) {
     next(err);
@@ -155,6 +173,7 @@ export async function getApplication(req, res, next) {
       success: true,
       data: {
         ...application,
+        business_address: formatAddressString(application.business_address),
         statusHistory
       }
     });
@@ -192,6 +211,10 @@ export async function updateApplication(req, res, next) {
     }
 
     const updatedApplication = await MerchantApplicationModel.updateApplication(applicationId, updateData);
+
+    if (updatedApplication && updatedApplication.business_address) {
+      updatedApplication.business_address = formatAddressString(updatedApplication.business_address);
+    }
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -257,10 +280,15 @@ export async function getApplicationsRequiringReview(req, res, next) {
     const slaHours = parseInt(req.query.slaHours) || 48;
     const applications = await MerchantApplicationModel.getApplicationsRequiringReview(slaHours);
 
+    const formatted = (applications || []).map((a) => ({
+      ...a,
+      business_address: formatAddressString(a.business_address)
+    }));
+
     res.status(StatusCodes.OK).json({
       success: true,
-      data: applications,
-      count: applications.length
+      data: formatted,
+      count: formatted.length
     });
   } catch (err) {
     next(err);

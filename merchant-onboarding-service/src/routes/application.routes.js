@@ -12,11 +12,11 @@ import {
 
 const router = Router();
 
-// All routes require authentication
-router.use(verifyAuthToken());
-
-// Application routes
+// Public: submit application does not require auth
 router.post('/', submitApplication);
+
+// Protected: all other application routes
+router.use(verifyAuthToken());
 router.get('/', getUserApplications);
 router.get('/stats', getApplicationStats);
 router.get('/sla-check', getApplicationsRequiringReview);

@@ -55,7 +55,7 @@ export class TransactionModel {
    */
   static async findById(id) {
     const pool = getPool();
-    const result = await pool.query('SELECT * FROM transactions WHERE id = $1', [id]);
+    const result = await pool.query('SELECT * FROM cashback_transactions WHERE id = $1', [id]);
     return result.rows[0] || null;
   }
 
@@ -79,18 +79,17 @@ export class TransactionModel {
    */
   static async update(id, data) {
     const pool = getPool();
-    const { amount, type, status, description, metadata } = data;
+    const { status, cashbackAmount, cashbackPercentage } = data;
 
     const result = await pool.query(
-      `UPDATE transactions 
-       SET amount = COALESCE($2, amount),
-           type = COALESCE($3, type),
-           status = COALESCE($4, status),
-           description = COALESCE($5, description),
-           metadata = COALESCE($6, metadata),
-           updated_at = NOW()
+      `UPDATE cashback_transactions 
+       SET 
+         status = COALESCE($2, status),
+         cashback_amount = COALESCE($3, cashback_amount),
+         cashback_percentage = COALESCE($4, cashback_percentage),
+         updated_at = NOW()
        WHERE id = $1 RETURNING *`,
-      [id, amount, type, status, description, metadata]
+      [id, status, cashbackAmount, cashbackPercentage]
     );
     return result.rows[0] || null;
   }
@@ -100,7 +99,7 @@ export class TransactionModel {
    */
   static async delete(id) {
     const pool = getPool();
-    await pool.query('DELETE FROM transactions WHERE id = $1', [id]);
+    await pool.query('DELETE FROM cashback_transactions WHERE id = $1', [id]);
   }
 
   /**
@@ -109,7 +108,7 @@ export class TransactionModel {
   static async process(id) {
     const pool = getPool();
     const result = await pool.query(
-      `UPDATE transactions SET status = 'processed', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      `UPDATE cashback_transactions SET status = 'processed', processed_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
     return result.rows[0] || null;

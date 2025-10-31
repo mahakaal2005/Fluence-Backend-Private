@@ -16,12 +16,10 @@ export class BudgetController {
         });
       }
 
-      const budgetData = {
-        ...req.body,
-        userId: req.user.id
-      };
+      const initialAmount = Number(req.body.amount);
+      const currency = req.body.currency || 'AED';
 
-      const budget = await BudgetModel.create(budgetData);
+      const budget = await BudgetModel.createBudget(req.user.id, initialAmount, currency);
       
       res.status(201).json({
         success: true,

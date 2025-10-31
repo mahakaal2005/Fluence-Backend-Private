@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import { loginWithFirebase } from '../controllers/social.controller.js';
 import { requireAuth } from '../middleware/auth.js';
+import { loginWithPassword } from '../controllers/password.controller.js';
 import { updateAccountStatus } from '../controllers/account.controller.js';
 import { getProfile, completeProfile } from '../controllers/profile.controller.js';
 import { getActiveSessions, getSessionStats } from '../controllers/sessions.controller.js';
 
 const router = Router();
+
+// Password login
+router.post('/login', loginWithPassword);
 
 // Firebase-only auth endpoint
 router.post('/firebase', loginWithFirebase);

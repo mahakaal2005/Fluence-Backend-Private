@@ -207,15 +207,16 @@ Get background job status.
 ### Budget Management
 
 #### POST `/api/budgets`
-Create a new budget.
+Create a new merchant budget for the authenticated merchant.
+
+Headers:
+- Authorization: Bearer <jwt>
 
 **Request:**
 ```json
 {
-  "name": "Monthly Shopping Budget",
-  "amount": 1000.00,
-  "currency": "USD",
-  "description": "Monthly shopping budget for cashback tracking"
+  "amount": 50000,
+  "currency": "AED"
 }
 ```
 
@@ -225,13 +226,12 @@ Create a new budget.
   "success": true,
   "data": {
     "id": "budget_uuid",
-    "name": "Monthly Shopping Budget",
-    "amount": 1000.00,
-    "currency": "USD",
-    "description": "Monthly shopping budget for cashback tracking",
-    "userId": "user_uuid",
+    "merchant_id": "merchant_uuid",
+    "current_balance": 50000.00,
+    "total_loaded": 50000.00,
+    "currency": "AED",
     "status": "active",
-    "createdAt": "2024-01-01T00:00:00.000Z"
+    "created_at": "2024-01-01T00:00:00.000Z"
   },
   "message": "Budget created successfully"
 }
@@ -362,11 +362,11 @@ Create a new cashback campaign.
 ```json
 {
   "name": "Summer Sale Campaign",
-  "budgetId": "budget_uuid",
   "cashbackPercentage": 5.0,
-  "startDate": "2024-06-01T00:00:00.000Z",
-  "endDate": "2024-08-31T23:59:59.000Z",
-  "description": "Summer sale cashback campaign"
+  "startDate": "2025-06-01T00:00:00.000Z",
+  "endDate": "2025-08-31T23:59:59.000Z",
+  "autoStopThreshold": 50.0,
+  "alertThreshold": 60.0
 }
 ```
 
@@ -377,14 +377,45 @@ Create a new cashback campaign.
   "data": {
     "id": "campaign_uuid",
     "name": "Summer Sale Campaign",
-    "budgetId": "budget_uuid",
+    "merchantId": "merchant_uuid",
     "cashbackPercentage": 5.0,
-    "startDate": "2024-06-01T00:00:00.000Z",
-    "endDate": "2024-08-31T23:59:59.000Z",
+    "startDate": "2025-06-01T00:00:00.000Z",
+    "endDate": "2025-08-31T23:59:59.000Z",
     "status": "active",
     "createdAt": "2024-01-01T00:00:00.000Z"
   },
   "message": "Campaign created successfully"
+}
+```
+
+#### PUT `/api/campaigns/:id`
+Update an existing cashback campaign.
+
+**Request (one or more fields):**
+```json
+{
+  "name": "Updated Campaign Name",
+  "cashbackPercentage": 7.5,
+  "startDate": "2025-06-15T00:00:00.000Z",
+  "endDate": "2025-09-15T23:59:59.000Z",
+  "autoStopThreshold": 55.0,
+  "alertThreshold": 65.0
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "campaign_uuid",
+    "name": "Updated Campaign Name",
+    "cashbackPercentage": 7.5,
+    "startDate": "2025-06-15T00:00:00.000Z",
+    "endDate": "2025-09-15T23:59:59.000Z",
+    "status": "active"
+  },
+  "message": "Campaign updated successfully"
 }
 ```
 
@@ -489,7 +520,7 @@ Get transactions with filtering.
 
 **Query Parameters:**
 - `page`, `limit`: Pagination
-- `status`: Filter by status (pending, completed, failed, cancelled)
+- `status`: Filter by status (pending, processed, failed, disputed)
 - `type`: Filter by type (cashback, payment, refund)
 - `startDate`, `endDate`: Date range filtering
 
@@ -503,7 +534,7 @@ Get transactions with filtering.
         "id": "transaction_uuid",
         "amount": 100.00,
         "type": "cashback",
-        "status": "completed",
+        "status": "processed",
         "description": "Purchase at Store XYZ",
         "createdAt": "2024-01-01T00:00:00.000Z"
       }
@@ -549,6 +580,18 @@ Get transaction analytics.
   }
 }
 ```
+
+#### GET `/api/transactions/:id`
+Get a transaction by ID.
+
+#### PUT `/api/transactions/:id`
+Update a transaction (amount, type, status, description, metadata).
+
+#### DELETE `/api/transactions/:id`
+Delete a transaction.
+
+#### POST `/api/transactions/:id/process`
+Process a transaction.
 
 ### Dispute Management
 
@@ -638,16 +681,17 @@ Resolve a dispute.
 
 ### Application Management
 
-#### POST `/api/applications`
-Submit merchant application.
+#### POST `/api/applications` (Public)
+Submit a merchant application. Only one application per email (pending/approved) is allowed.
 
 **Request:**
 ```json
 {
   "businessName": "ABC Store",
   "businessType": "retail",
-  "contactEmail": "contact@abcstore.com",
-  "contactPhone": "+1234567890",
+  "contactPerson": "John Doe",
+  "email": "contact@abcstore.com",
+  "phone": "+1234567890",
   "businessAddress": {
     "street": "123 Main St",
     "city": "New York",
@@ -655,10 +699,11 @@ Submit merchant application.
     "zipCode": "10001",
     "country": "USA"
   },
-  "businessDescription": "Retail store selling electronics",
-  "expectedMonthlyVolume": 50000,
-  "bankingInfo": {
+  "businessLicense": "LIC-12345",
+  "taxId": "TAX-99999",
+  "bankAccountDetails": {
     "accountNumber": "1234567890",
+    "bankName": "Example Bank",
     "routingNumber": "021000021"
   }
 }
@@ -670,17 +715,21 @@ Submit merchant application.
   "success": true,
   "data": {
     "id": "application_uuid",
-    "businessName": "ABC Store",
-    "businessType": "retail",
+    "business_name": "ABC Store",
+    "business_type": "retail",
+    "contact_person": "John Doe",
+    "email": "contact@abcstore.com",
+    "phone": "+1234567890",
+    "business_address": "123 Main St, New York, NY, 10001, USA",
     "status": "pending",
-    "submittedAt": "2024-01-01T00:00:00.000Z"
+    "submitted_at": "2024-01-01T00:00:00.000Z"
   },
   "message": "Application submitted successfully"
 }
 ```
 
-#### GET `/api/applications`
-Get user applications.
+#### GET `/api/applications` (Auth required)
+Get applications for the authenticated user.
 
 **Response:**
 ```json
@@ -689,17 +738,18 @@ Get user applications.
   "data": [
     {
       "id": "application_uuid",
-      "businessName": "ABC Store",
-      "businessType": "retail",
+      "business_name": "ABC Store",
+      "business_type": "retail",
+      "business_address": "123 Main St, New York, NY, 10001, USA",
       "status": "pending",
-      "submittedAt": "2024-01-01T00:00:00.000Z"
+      "submitted_at": "2024-01-01T00:00:00.000Z"
     }
   ]
 }
 ```
 
-#### GET `/api/applications/:applicationId`
-Get specific application.
+#### GET `/api/applications/:applicationId` (Auth required)
+Get a specific application.
 
 **Response:**
 ```json
@@ -707,31 +757,26 @@ Get specific application.
   "success": true,
   "data": {
     "id": "application_uuid",
-    "businessName": "ABC Store",
-    "businessType": "retail",
-    "contactEmail": "contact@abcstore.com",
-    "contactPhone": "+1234567890",
-    "businessAddress": {
-      "street": "123 Main St",
-      "city": "New York",
-      "state": "NY",
-      "zipCode": "10001",
-      "country": "USA"
-    },
+    "business_name": "ABC Store",
+    "business_type": "retail",
+    "contact_person": "John Doe",
+    "email": "contact@abcstore.com",
+    "phone": "+1234567890",
+    "business_address": "123 Main St, New York, NY, 10001, USA",
     "status": "pending",
-    "submittedAt": "2024-01-01T00:00:00.000Z"
+    "submitted_at": "2024-01-01T00:00:00.000Z"
   }
 }
 ```
 
-#### PUT `/api/applications/:applicationId`
-Update application.
+#### PUT `/api/applications/:applicationId` (Auth required)
+Update application (only if pending).
 
-**Request:**
+**Request (example):**
 ```json
 {
   "businessName": "Updated Store Name",
-  "contactPhone": "+1987654321"
+  "phone": "+1987654321"
 }
 ```
 
@@ -739,6 +784,12 @@ Update application.
 ```json
 {
   "success": true,
+  "data": {
+    "id": "application_uuid",
+    "business_name": "Updated Store Name",
+    "phone": "+1987654321",
+    "business_address": "123 Main St, New York, NY, 10001, USA"
+  },
   "message": "Application updated successfully"
 }
 ```
@@ -850,6 +901,56 @@ Update application status (admin only).
 {
   "success": true,
   "message": "Application status updated successfully"
+}
+```
+
+### Merchant Auth
+
+#### POST `/api/merchant/auth/set-password` (Public)
+Set merchant password after approval.
+
+**Request:**
+```json
+{
+  "email": "merchant@example.com",
+  "password": "StrongPass!234"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password set successfully",
+  "data": { "id": "merchant_id", "email": "merchant@example.com" }
+}
+```
+
+#### POST `/api/merchant/auth/login` (Public)
+Login with email and password; returns JWT when profile is active.
+
+**Request:**
+```json
+{
+  "email": "merchant@example.com",
+  "password": "StrongPass!234"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "token": "jwt_token_here",
+    "merchant": {
+      "id": "merchant_id",
+      "email": "merchant@example.com",
+      "businessName": "ABC Store",
+      "status": "active"
+    }
+  },
+  "message": "Login successful"
 }
 ```
 

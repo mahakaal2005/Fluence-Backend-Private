@@ -7,10 +7,8 @@ const router = express.Router();
 
 // Validation middleware
 const createBudgetValidation = [
-  body('name').notEmpty().withMessage('Budget name is required'),
   body('amount').isNumeric().withMessage('Amount must be a number'),
-  body('currency').optional().isString().withMessage('Currency must be a string'),
-  body('description').optional().isString().withMessage('Description must be a string')
+  body('currency').optional().isString().isLength({ min: 3, max: 3 }).withMessage('Currency must be a 3-letter code')
 ];
 
 const updateBudgetValidation = [

@@ -12,7 +12,7 @@ export class PointsTransactionModel {
       transactionType,
       description,
       referenceId,
-      socialPostRequired = false,
+      socialPostRequired = true,
       timeBufferEndsAt = null,
       expiresAt = null
     } = transactionData;
@@ -120,7 +120,7 @@ export class PointsTransactionModel {
        WHERE user_id = $1 
        AND social_post_required = true 
        AND social_post_made = false 
-       AND status = 'available'
+       AND status = 'pending'
        ORDER BY created_at DESC 
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset]

@@ -6,6 +6,10 @@ import { signToken } from '../utils/jwt.js';
 import { getPool } from '../db/pool.js';
 import bcrypt from 'bcrypt';
 
+const approveSchema = z.object({
+  adminNotes: z.string().optional()
+});
+
 const createAdminUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email format'),
@@ -147,6 +151,44 @@ export async function updateUserRole(req, res, next) {
       user: result.rows[0]
     });
   } catch (err) {
+    next(err);
+  }
+}
+
+export async function approveMerchantApplication(req, res, next) {
+  try {
+    const { applicationId } = req.params;
+    const { adminNotes } = approveSchema.parse(req.body || {});
+
+    const merchantServiceUrl = process.env.MERCHANT_SERVICE_URL || 'http://localhost:4003';
+    const url = `${merchantServiceUrl}/api/admin/applications/${applicationId}/review`;
+
+    const authHeader = req.headers['authorization'] || '';
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader
+      },
+      body: JSON.stringify({
+        status: 'approved',
+        adminNotes: adminNotes || 'Approved By Admin',
+        reviewedBy: req.user?.id
+      })
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new ApiError(response.status, `Merchant service error: ${errorBody}`);
+    }
+
+    const data = await response.json();
+    res.status(StatusCodes.OK).json({ success: true, message: 'Application approved', data });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return next(new ApiError(StatusCodes.BAD_REQUEST, 'Invalid input data', err.flatten()));
+    }
     next(err);
   }
 }

@@ -1,6 +1,6 @@
 import express from 'express';
 import { TransactionController } from '../controllers/transaction.controller.js';
-import { verifyAuthToken } from '../middleware/auth.js';
+import { verifyAuthToken, requireAdmin } from '../middleware/auth.js';
 import { body, param, query } from 'express-validator';
 
 const router = express.Router();
@@ -9,6 +9,7 @@ const router = express.Router();
 const createTransactionValidation = [
   body('amount').isNumeric().withMessage('Amount must be a number'),
   body('type').isIn(['cashback', 'payment', 'refund']).withMessage('Invalid transaction type'),
+  body('customerId').isUUID().withMessage('customerId is required and must be a valid UUID'),
   body('campaignId').optional().isUUID().withMessage('Invalid campaign ID'),
   body('description').optional().isString().withMessage('Description must be a string'),
   body('metadata').optional().isObject().withMessage('Metadata must be an object')
@@ -47,8 +48,8 @@ router.post('/', verifyAuthToken(), createTransactionValidation, TransactionCont
 router.get('/', verifyAuthToken(), queryValidation, TransactionController.getTransactions);
 router.get('/analytics', verifyAuthToken(), analyticsValidation, TransactionController.getTransactionAnalytics);
 router.get('/:id', verifyAuthToken(), transactionIdValidation, TransactionController.getTransactionById);
-router.put('/:id', verifyAuthToken(), updateTransactionValidation, TransactionController.updateTransaction);
-router.delete('/:id', verifyAuthToken(), transactionIdValidation, TransactionController.deleteTransaction);
-router.post('/:id/process', verifyAuthToken(), transactionIdValidation, TransactionController.processTransaction);
+router.put('/:id', verifyAuthToken(), requireAdmin(), updateTransactionValidation, TransactionController.updateTransaction);
+router.delete('/:id', verifyAuthToken(), requireAdmin(), transactionIdValidation, TransactionController.deleteTransaction);
+router.post('/:id/process', verifyAuthToken(), requireAdmin(), transactionIdValidation, TransactionController.processTransaction);
 
 export default router;

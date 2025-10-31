@@ -7,7 +7,6 @@ export class MerchantApplicationModel {
   static async createApplication(applicationData) {
     const pool = getPool();
     const {
-      userId,
       businessName,
       businessType,
       contactPerson,
@@ -19,14 +18,17 @@ export class MerchantApplicationModel {
       bankAccountDetails
     } = applicationData;
 
+    // Until DB schema is relaxed, use placeholder user_id
+    const placeholderUserId = '00000000-0000-0000-0000-000000000000';
+
     const result = await pool.query(
       `INSERT INTO merchant_applications (
         user_id, business_name, business_type, contact_person, email, phone,
         business_address, business_license, tax_id, bank_account_details
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
-        userId, businessName, businessType, contactPerson, email.toLowerCase(),
-        phone, businessAddress, businessLicense, taxId, bankAccountDetails
+        placeholderUserId, businessName, businessType, contactPerson, email.toLowerCase(),
+        phone, JSON.stringify(businessAddress), businessLicense, taxId, bankAccountDetails
       ]
     );
 
@@ -134,7 +136,7 @@ export class MerchantApplicationModel {
        WHERE id = $1 AND status = 'pending' RETURNING *`,
       [
         applicationId, businessName, businessType, contactPerson, email.toLowerCase(),
-        phone, businessAddress, businessLicense, taxId, bankAccountDetails
+        phone, businessAddress ? JSON.stringify(businessAddress) : undefined, businessLicense, taxId, bankAccountDetails
       ]
     );
     return result.rows[0] || null;
@@ -209,6 +211,19 @@ export class MerchantApplicationModel {
       `SELECT COUNT(*) as count FROM merchant_applications 
        WHERE user_id = $1 AND status IN ('pending', 'approved')`,
       [userId]
+    );
+    return parseInt(result.rows[0].count) > 0;
+  }
+
+  /**
+   * Check if application exists for email (pending or approved)
+   */
+  static async hasExistingApplicationByEmail(email) {
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT COUNT(*) as count FROM merchant_applications
+       WHERE email = $1 AND status IN ('pending', 'approved')`,
+      [email.toLowerCase()]
     );
     return parseInt(result.rows[0].count) > 0;
   }

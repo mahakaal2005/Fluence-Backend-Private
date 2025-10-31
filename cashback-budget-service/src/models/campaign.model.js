@@ -99,14 +99,16 @@ export class CampaignModel {
    */
   static async updateCampaign(campaignId, updateData) {
     const pool = getPool();
-    const {
-      campaignName,
-      cashbackPercentage,
-      startDate,
-      endDate,
-      autoStopThreshold,
-      alertThreshold
-    } = updateData;
+    // Load existing to support partial updates without nulling required fields
+    const existing = await CampaignModel.getCampaignById(campaignId);
+    if (!existing) return null;
+
+    const campaignName = updateData.name ?? updateData.campaignName ?? existing.campaign_name;
+    const cashbackPercentage = updateData.cashbackPercentage ?? existing.cashback_percentage;
+    const startDate = updateData.startDate ?? existing.start_date;
+    const endDate = updateData.endDate ?? existing.end_date;
+    const autoStopThreshold = updateData.autoStopThreshold ?? existing.auto_stop_threshold;
+    const alertThreshold = updateData.alertThreshold ?? existing.alert_threshold;
 
     const result = await pool.query(
       `UPDATE cashback_campaigns 
@@ -316,5 +318,14 @@ export class CampaignModel {
       [`%${searchTerm}%`, limit, offset]
     );
     return result.rows;
+  }
+
+  // Aliases for controller compatibility
+  static async findById(id) {
+    return this.getCampaignById(id);
+  }
+
+  static async update(id, updateData) {
+    return this.updateCampaign(id, updateData);
   }
 }

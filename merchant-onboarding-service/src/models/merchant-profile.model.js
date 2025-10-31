@@ -307,63 +307,7 @@ export class MerchantProfileModel {
     return result.rows[0] || null;
   }
 
-  /**
-   * Set OTP code and expiry for a merchant profile by email
-   */
-  static async setOtpByEmail(email, otpCode, expiresAt, resetAttempts = false) {
-    const pool = getPool();
-    const result = await pool.query(
-      `UPDATE merchant_profiles
-       SET otp_code = $2,
-           otp_expires_at = $3,
-           otp_attempts = CASE WHEN $4 THEN 0 ELSE otp_attempts END,
-           updated_at = NOW()
-       WHERE email = $1
-       RETURNING *`,
-      [email.toLowerCase(), otpCode, expiresAt, resetAttempts]
-    );
-    return result.rows[0] || null;
-  }
-
-  /**
-   * Verify OTP for email; increments attempts and clears on success
-   */
-  static async verifyOtp(email, otpCode) {
-    const pool = getPool();
-    const { rows } = await pool.query(
-      `SELECT id, otp_code, otp_expires_at, otp_attempts
-       FROM merchant_profiles WHERE email = $1`,
-      [email.toLowerCase()]
-    );
-    const profile = rows[0];
-    if (!profile) return { ok: false, reason: 'not_found' };
-
-    const now = new Date();
-    const expired = !profile.otp_expires_at || now > new Date(profile.otp_expires_at);
-    const match = profile.otp_code && otpCode && profile.otp_code === otpCode;
-
-    if (expired || !match) {
-      await pool.query(
-        `UPDATE merchant_profiles
-         SET otp_attempts = COALESCE(otp_attempts, 0) + 1,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [profile.id]
-      );
-      return { ok: false, reason: expired ? 'expired' : 'mismatch' };
-    }
-
-    await pool.query(
-      `UPDATE merchant_profiles
-       SET otp_code = NULL,
-           otp_expires_at = NULL,
-           otp_attempts = 0,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [profile.id]
-    );
-    return { ok: true, profileId: profile.id };
-  }
+  // OTP-related methods removed: flow now uses Firebase email verification
 
   /**
    * Record successful login timestamp

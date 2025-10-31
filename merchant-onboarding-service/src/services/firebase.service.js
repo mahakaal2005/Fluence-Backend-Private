@@ -29,49 +29,15 @@ function getFirestore() {
   return initializeFirebase().firestore();
 }
 
-function generateOtpCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-// Collection name in Firestore to store OTPs
-const OTP_COLLECTION = 'merchant_email_otps';
-
-export async function createEmailOtp(email, ttlMinutes = 10) {
-  const db = getFirestore();
-  const code = generateOtpCode();
-  const now = Date.now();
-  const expiresAt = new Date(now + ttlMinutes * 60 * 1000);
-
-  const docRef = db.collection(OTP_COLLECTION).doc(email.toLowerCase());
-  await docRef.set({
-    email: email.toLowerCase(),
-    code,
-    createdAt: admin.firestore.Timestamp.fromDate(new Date(now)),
-    expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
-    attempts: 0
-  });
-
-  return { code, expiresAt };
-}
-
-export async function verifyEmailOtp(email, code) {
-  const db = getFirestore();
-  const docRef = db.collection(OTP_COLLECTION).doc(email.toLowerCase());
-  const snap = await docRef.get();
-  if (!snap.exists) return { ok: false, reason: 'not_found' };
-
-  const data = snap.data();
-  const now = new Date();
-  const expired = data.expiresAt && data.expiresAt.toDate() < now;
-  const match = data.code === code;
-
-  if (expired || !match) {
-    await docRef.update({ attempts: (data.attempts || 0) + 1 });
-    return { ok: false, reason: expired ? 'expired' : 'mismatch' };
+export async function isEmailVerified(email) {
+  const auth = initializeFirebase().auth();
+  try {
+    const user = await auth.getUserByEmail(email.toLowerCase());
+    return Boolean(user.emailVerified);
+  } catch (e) {
+    // If user not found in Firebase, treat as not verified
+    return false;
   }
-
-  await docRef.delete();
-  return { ok: true };
 }
 
 

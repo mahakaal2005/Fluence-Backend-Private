@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { PointsTransactionModel } from '../models/points-transaction.model.js';
 import { ApiError } from '../middleware/error.js';
+import { getPool } from '../config/database.js';
 
 export class PointsController {
   /**
@@ -14,7 +15,7 @@ export class PointsController {
         transactionType, 
         description, 
         referenceId,
-        socialPostRequired = false,
+        socialPostRequired,
         timeBufferEndsAt = null,
         expiresAt = null
       } = req.body;
@@ -33,10 +34,29 @@ export class PointsController {
         transactionType,
         description,
         referenceId,
-        socialPostRequired,
+        socialPostRequired: (socialPostRequired !== undefined)
+          ? socialPostRequired
+          : (transactionType === 'cashback'),
         timeBufferEndsAt,
         expiresAt
       });
+
+      // Explicitly reflect pending points in wallet_balances (in addition to DB trigger)
+      try {
+        const pool = getPool();
+        await pool.query(
+          `INSERT INTO wallet_balances (user_id, pending_balance, last_updated_at, created_at, updated_at)
+           VALUES ($1, $2, NOW(), NOW(), NOW())
+           ON CONFLICT (user_id) DO UPDATE SET
+             pending_balance = wallet_balances.pending_balance + EXCLUDED.pending_balance,
+             last_updated_at = NOW(),
+             updated_at = NOW()`,
+          [userId, parseInt(amount, 10)]
+        );
+      } catch (balanceErr) {
+        // Do not fail earn if balance update fails; background reconciliation will pick it up
+        console.error('Failed to update pending_balance for user', userId, balanceErr);
+      }
       
       res.status(StatusCodes.CREATED).json({
         success: true,

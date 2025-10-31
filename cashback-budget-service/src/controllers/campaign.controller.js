@@ -16,12 +16,15 @@ export class CampaignController {
         });
       }
 
-      const campaignData = {
-        ...req.body,
-        userId: req.user.id
-      };
-
-      const campaign = await CampaignModel.create(campaignData);
+      const campaign = await CampaignModel.createCampaign({
+        merchantId: req.user.id,
+        campaignName: req.body.name,
+        cashbackPercentage: req.body.cashbackPercentage,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        autoStopThreshold: req.body.autoStopThreshold,
+        alertThreshold: req.body.alertThreshold
+      });
 
       res.status(201).json({
         success: true,
@@ -128,7 +131,7 @@ export class CampaignController {
       }
 
       const { id } = req.params;
-      const campaign = await CampaignModel.findById(id);
+      const campaign = await CampaignModel.getCampaignById(id);
 
       if (!campaign) {
         return res.status(404).json({
@@ -137,7 +140,7 @@ export class CampaignController {
         });
       }
 
-      const updatedCampaign = await CampaignModel.update(id, req.body);
+      const updatedCampaign = await CampaignModel.updateCampaign(id, req.body);
 
       res.json({
         success: true,

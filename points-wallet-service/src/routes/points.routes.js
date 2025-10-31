@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { verifyAuthToken } from '../middleware/auth.js';
+import { verifyAuthToken, requireAdmin } from '../middleware/auth.js';
 import { PointsController } from '../controllers/points.controller.js';
 
 const router = Router();
@@ -13,9 +13,9 @@ router.post('/earn', PointsController.earnPoints);
 // Points transaction routes
 router.get('/transactions', PointsController.getPointsTransactions);
 router.get('/transactions/:transactionId', PointsController.getPointsTransactionById);
-router.put('/transactions/:transactionId/status', PointsController.updateTransactionStatus);
-router.put('/transactions/:transactionId/social-post', PointsController.updateSocialPostStatus);
-router.delete('/transactions/:transactionId', PointsController.deleteTransaction);
+router.put('/transactions/:transactionId/status', requireAdmin(), PointsController.updateTransactionStatus);
+router.put('/transactions/:transactionId/social-post', requireAdmin(), PointsController.updateSocialPostStatus);
+router.delete('/transactions/:transactionId', requireAdmin(), PointsController.deleteTransaction);
 
 // Points utility routes
 router.get('/transactions/requiring-social-posts', PointsController.getTransactionsRequiringSocialPosts);
