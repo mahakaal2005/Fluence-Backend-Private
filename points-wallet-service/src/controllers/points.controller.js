@@ -97,13 +97,26 @@ export class PointsController {
         filters
       );
       
+      // Clean up descriptions to remove transaction IDs and ensure transaction_id field is present
+      const cleanedTransactions = transactions.map(transaction => {
+        // Remove transaction ID from description if present (e.g., "Cashback pending (txn ...)" -> "Cashback pending")
+        let cleanedDescription = transaction.description || '';
+        cleanedDescription = cleanedDescription.replace(/\s*\(txn\s+[^)]+\)/gi, '');
+        
+        return {
+          ...transaction,
+          description: cleanedDescription,
+          transaction_id: transaction.reference_id || null // Add transaction_id field for clarity
+        };
+      });
+      
       res.status(StatusCodes.OK).json({
         success: true,
-        data: transactions,
+        data: cleanedTransactions,
         pagination: {
           limit: parseInt(limit),
           offset: parseInt(offset),
-          count: transactions.length
+          count: cleanedTransactions.length
         }
       });
     } catch (error) {
