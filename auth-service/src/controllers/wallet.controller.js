@@ -1,13 +1,14 @@
 import { StatusCodes } from 'http-status-codes';
-// Optional: use DB if needed in future
-// import { getPool } from '../db/pool.js';
+import { signToken } from '../utils/jwt.js';
 
-// Minimal controller to satisfy admin routes and avoid crashes.
-// Extend with real implementations when social post verification is wired up.
+// Points Wallet Service URL
+const POINTS_WALLET_SERVICE_URL = process.env.POINTS_WALLET_SERVICE_URL || 'http://localhost:4005';
+
 export const WalletController = {
   /**
    * Return pending social posts awaiting verification.
    * Currently returns an empty array placeholder.
+   * TODO: Integrate with social-features service to get actual pending posts
    */
   async getPendingSocialPosts(_req, res) {
     try {
@@ -27,8 +28,12 @@ export const WalletController = {
   },
 
   /**
-   * Verify a social post associated with a transaction.
-   * Currently a no-op placeholder acknowledging the request.
+   * Verify a social post associated with a cashback transaction.
+   * This will:
+   * 1. Call Points Wallet Service to find all pending points transactions with this referenceId
+   * 2. Update their status from 'pending' to 'available'
+   * 3. Mark social_post_verified = true
+   * 4. The database trigger will automatically move points from pending_balance to available_balance
    */
   async verifySocialPost(req, res) {
     try {
@@ -40,12 +45,43 @@ export const WalletController = {
         });
       }
 
-      // Placeholder: add DB update or service call here
+      // Generate JWT for admin user to authenticate with Points Wallet Service
+      const adminJwt = signToken({
+        sub: req.user.id,
+        email: req.user.email,
+        role: 'admin'
+      });
+
+      // Call Points Wallet Service to verify social post and update transaction status
+      const response = await fetch(
+        `${POINTS_WALLET_SERVICE_URL}/api/points/verify-social/${transactionId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${adminJwt}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        return res.status(response.status).json({
+          success: false,
+          message: errorData.message || 'Failed to verify social post in Points Wallet Service',
+          error: errorData.error || errorData.message
+        });
+      }
+
+      const result = await response.json();
+
       return res.status(StatusCodes.OK).json({
         success: true,
-        message: `Social post for transaction ${transactionId} verified (placeholder)`
+        data: result.data,
+        message: result.message || 'Social post verified successfully and points moved to available balance'
       });
     } catch (error) {
+      console.error('Error verifying social post:', error);
       return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: 'Failed to verify social post',

@@ -4,6 +4,7 @@
 -- Create required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Social Platforms Table
 CREATE TABLE IF NOT EXISTS social_platforms (
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS social_posts (
   user_id UUID NOT NULL, -- References auth service users
   social_account_id UUID NOT NULL REFERENCES social_accounts(id),
   platform_post_id VARCHAR(255),
+  original_transaction_id UUID, -- Optional link to cashback transaction
   content TEXT NOT NULL,
   media_urls TEXT[], -- Array of media URLs
   post_type VARCHAR(20) DEFAULT 'text' CHECK (post_type IN ('text', 'image', 'video', 'link')),
@@ -255,8 +257,9 @@ BEGIN
   
   -- Extract merchant tags from content (@mentions)
   NEW.merchant_tags := ARRAY(
-    SELECT DISTINCT unnest(regexp_split_to_array(NEW.content, ' '))
-    WHERE unnest(regexp_split_to_array(NEW.content, ' ')) ~ '^@[a-zA-Z0-9_]+$'
+    SELECT DISTINCT word
+    FROM unnest(regexp_split_to_array(NEW.content, ' ')) AS word
+    WHERE word ~ '^@[a-zA-Z0-9_]+$'
   );
   
   -- Set status to pending_review for new posts
@@ -273,6 +276,15 @@ CREATE TRIGGER trigger_process_post_content
   BEFORE INSERT OR UPDATE ON social_posts
   FOR EACH ROW
   EXECUTE FUNCTION process_post_content();
+
+-- Backfill migration guard: ensure column exists on existing DBs
+DO $$ BEGIN
+  BEGIN
+    ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS original_transaction_id UUID;
+  EXCEPTION WHEN duplicate_column THEN
+    -- ignore
+  END;
+END $$;
 
 -- Insert default social platforms
 INSERT INTO social_platforms (name, display_name, api_base_url, auth_url, token_url, scope) VALUES

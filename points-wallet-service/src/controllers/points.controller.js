@@ -195,6 +195,66 @@ export class PointsController {
   }
 
   /**
+   * Verify social post by reference ID (cashback transaction ID)
+   * This updates all pending points transactions with the given referenceId
+   * to 'available' status and marks social_post_verified = true
+   */
+  static async verifySocialPostByReferenceId(req, res, next) {
+    try {
+      const { referenceId } = req.params;
+      
+      if (!referenceId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Reference ID (transactionId) is required');
+      }
+
+      // Find all pending points transactions with this referenceId
+      const pendingTransactions = await PointsTransactionModel.getTransactionsByReferenceId(referenceId);
+      const filteredPending = pendingTransactions.filter(t => t.status === 'pending');
+      
+      if (filteredPending.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'No pending transactions found for this reference ID');
+      }
+
+      const pool = getPool();
+      const updatedTransactions = [];
+
+      // Update each pending transaction to 'available' and mark social post as verified
+      for (const transaction of filteredPending) {
+        const result = await pool.query(
+          `UPDATE points_transactions 
+           SET status = 'available', 
+               social_post_verified = true,
+               processed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $1 AND status = 'pending'
+           RETURNING *`,
+          [transaction.id]
+        );
+
+        if (result.rows.length > 0) {
+          updatedTransactions.push(result.rows[0]);
+        }
+      }
+
+      if (updatedTransactions.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'No transactions were updated');
+      }
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          referenceId,
+          updatedCount: updatedTransactions.length,
+          transactions: updatedTransactions
+        },
+        message: `Successfully verified ${updatedTransactions.length} transaction(s) and moved points to available balance`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Get transactions requiring social posts
    */
   static async getTransactionsRequiringSocialPosts(req, res, next) {

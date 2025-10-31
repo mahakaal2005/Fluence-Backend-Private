@@ -121,7 +121,7 @@ export class SocialController {
   static async createSocialPost(req, res, next) {
     try {
       const userId = req.user.id;
-      const { socialAccountId, content, mediaUrls, postType, scheduledAt } = req.body;
+      const { socialAccountId, content, mediaUrls, postType, scheduledAt, transactionId } = req.body;
 
       if (!socialAccountId || !content) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Social account ID and content are required');
@@ -141,9 +141,9 @@ export class SocialController {
 
       const post = await pool.query(
         `INSERT INTO social_posts (
-          user_id, social_account_id, content, media_urls, post_type, scheduled_at
-        ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [userId, socialAccountId, content, mediaUrls || [], postType || 'text', scheduledAt]
+          user_id, social_account_id, content, media_urls, post_type, scheduled_at, original_transaction_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [userId, socialAccountId, content, mediaUrls || [], postType || 'text', scheduledAt, transactionId || null]
       );
 
       res.status(StatusCodes.CREATED).json({
