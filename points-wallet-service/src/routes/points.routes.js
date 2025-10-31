@@ -15,7 +15,7 @@ router.get('/transactions', PointsController.getPointsTransactions);
 router.get('/transactions/:transactionId', PointsController.getPointsTransactionById);
 router.put('/transactions/:transactionId/status', requireAdmin(), PointsController.updateTransactionStatus);
 router.put('/transactions/:transactionId/social-post', requireAdmin(), PointsController.updateSocialPostStatus);
-router.put('/verify-social/:referenceId', requireAdmin(), PointsController.verifySocialPostByReferenceId);
+router.put('/verify-social/:id', requireAdmin(), PointsController.verifySocialPostByReferenceId);
 router.delete('/transactions/:transactionId', requireAdmin(), PointsController.deleteTransaction);
 
 // Points utility routes

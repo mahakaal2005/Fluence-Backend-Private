@@ -2,6 +2,8 @@ import { StatusCodes } from 'http-status-codes';
 import { PointsTransactionModel } from '../models/points-transaction.model.js';
 import { ApiError } from '../middleware/error.js';
 import { getPool } from '../config/database.js';
+import { WalletBalanceModel } from '../models/wallet-balance.model.js';
+
 
 export class PointsController {
   /**
@@ -214,28 +216,62 @@ export class PointsController {
    */
   static async verifySocialPostByReferenceId(req, res, next) {
     try {
-      const { referenceId } = req.params;
-      
+      const referenceId = req.params.id; // ✅ get from params (NOT 'id' variable)
+  
       if (!referenceId) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Reference ID (transactionId) is required');
       }
-
-      // Find all pending points transactions with this referenceId
+  
+      // 1️⃣ Get pending transactions for this referenceId
       const pendingTransactions = await PointsTransactionModel.getTransactionsByReferenceId(referenceId);
       const filteredPending = pendingTransactions.filter(t => t.status === 'pending');
-      
+  
       if (filteredPending.length === 0) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'No pending transactions found for this reference ID');
       }
-
+  
       const pool = getPool();
       const updatedTransactions = [];
-
-      // Update each pending transaction to 'available' and mark social post as verified
+  
+      // 2️⃣ Process each transaction
       for (const transaction of filteredPending) {
+        const { user_id, amount } = transaction;
+  
+        // Get current wallet balance
+        const walletResult = await pool.query(
+          `SELECT available_balance, pending_balance, total_earned, total_redeemed, total_expired
+           FROM wallet_balances WHERE user_id = $1`,
+          [user_id]
+        );
+  
+        if (walletResult.rows.length === 0) {
+          console.warn(`⚠️ No wallet found for user ${user_id}, skipping transaction ${transaction.id}`);
+          continue;
+        }
+  
+        const wallet = walletResult.rows[0];
+  
+        // 3️⃣ Compute updated balances
+        const updatedBalance = {
+          availableBalance: Number(wallet.available_balance) + Number(amount),
+          pendingBalance: Math.max(0, Number(wallet.pending_balance) - Number(amount)),
+          totalEarned: Number(wallet.total_earned),
+          totalRedeemed: Number(wallet.total_redeemed),
+          totalExpired: Number(wallet.total_expired)
+        };
+  
+        // 4️⃣ Update wallet balance before confirming the transaction
+        const updatedWallet = await WalletBalanceModel.updateWalletBalance(user_id, updatedBalance);
+  
+        if (!updatedWallet) {
+          console.error(`❌ Failed to update wallet for user ${user_id}, skipping transaction ${transaction.id}`);
+          continue;
+        }
+  
+        // 5️⃣ Mark transaction as available
         const result = await pool.query(
           `UPDATE points_transactions 
-           SET status = 'available', 
+           SET status = 'available',
                social_post_verified = true,
                processed_at = NOW(),
                updated_at = NOW()
@@ -243,16 +279,17 @@ export class PointsController {
            RETURNING *`,
           [transaction.id]
         );
-
+  
         if (result.rows.length > 0) {
           updatedTransactions.push(result.rows[0]);
         }
       }
-
+  
       if (updatedTransactions.length === 0) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'No transactions were updated');
       }
-
+  
+      // 6️⃣ Respond with summary
       res.status(StatusCodes.OK).json({
         success: true,
         data: {
@@ -260,12 +297,14 @@ export class PointsController {
           updatedCount: updatedTransactions.length,
           transactions: updatedTransactions
         },
-        message: `Successfully verified ${updatedTransactions.length} transaction(s) and moved points to available balance`
+        message: `Successfully verified ${updatedTransactions.length} transaction(s) and updated wallet balances`
       });
     } catch (error) {
       next(error);
     }
   }
+  
+  
 
   /**
    * Get transactions requiring social posts

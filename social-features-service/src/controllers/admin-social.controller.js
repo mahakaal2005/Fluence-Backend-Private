@@ -2,10 +2,15 @@ import { StatusCodes } from 'http-status-codes';
 import { getPool } from '../config/database.js';
 import { ApiError } from '../middleware/error.js';
 import crypto from 'crypto';
+import { signToken } from '../config/jwt.js';
+
 
 /**
  * Sanitize text by removing replacement characters and invalid UTF-8 sequences
  */
+
+const CASHBACK_BUDGET_SERVICE_URL = process.env.CASHBACK_BUDGET_SERVICE_URL || 'http://localhost:4002';
+
 function sanitizeText(text) {
   if (!text) return text;
   const original = text;
@@ -175,41 +180,76 @@ export class AdminSocialController {
   static async approvePost(req, res, next) {
     try {
       console.log('✅ [POSTS] Approve post request:', req.params.postId);
+  
       const { postId } = req.params;
       const { adminNotes } = req.body;
       const adminId = req.user.id;
       const pool = getPool();
-
-      // Update post status to approved
+  
+      // 🔹 Step 1: Fetch original_transaction_id from social_posts
+      const postResult = await pool.query(
+        `SELECT user_id, original_transaction_id FROM social_posts WHERE id = $1`,
+        [postId]
+      );
+  
+      if (postResult.rows.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Post not found');
+      }
+  
+      const { user_id, original_transaction_id } = postResult.rows[0];
+  
+      // 🔹 Step 2: Generate JWT for admin user
+      const adminJwt = signToken({
+        sub: req.user.id,
+        email: req.user.email,
+        role: 'admin'
+      });
+  
+      // 🔹 Step 3: Call Cashback Budget Service with postId and original_transaction_id
+      const response = await fetch(
+        `${CASHBACK_BUDGET_SERVICE_URL}/api/transactions/${original_transaction_id}/process`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${adminJwt}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+  
+      // Optional: handle non-OK response
+      if (!response.ok) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Failed to process cashback transaction');
+      }
+  
+      // 🔹 Step 4: Update post status to approved
       const updatedPost = await pool.query(
         `UPDATE social_posts 
          SET status = 'approved', updated_at = NOW()
          WHERE id = $1 RETURNING *`,
         [postId]
       );
-
-      if (updatedPost.rows.length === 0) {
-        throw new ApiError(StatusCodes.NOT_FOUND, 'Post not found');
-      }
-
-      // Create verification record
+  
+      // 🔹 Step 5: Create verification record
       await pool.query(
         `INSERT INTO social_verification (
           user_id, post_id, verification_type, status, verified_by, 
           verified_at, verification_notes
         ) VALUES ($1, $2, 'manual', 'verified', $3, NOW(), $4)`,
-        [updatedPost.rows[0].user_id, postId, adminId, adminNotes]
+        [user_id, postId, adminId, adminNotes]
       );
-
+  
       res.status(StatusCodes.OK).json({
         success: true,
         data: updatedPost.rows[0],
         message: 'Post approved successfully'
       });
+  
     } catch (error) {
       next(error);
     }
   }
+  
 
   /**
    * Reject a post (admin only)

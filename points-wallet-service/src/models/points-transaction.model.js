@@ -148,11 +148,11 @@ export class PointsTransactionModel {
   /**
    * Get transactions by reference ID
    */
-  static async getTransactionsByReferenceId(referenceId) {
+  static async getTransactionsByReferenceId(id) {
     const pool = getPool();
     const result = await pool.query(
       'SELECT * FROM points_transactions WHERE reference_id = $1 ORDER BY created_at DESC',
-      [referenceId]
+      [id]
     );
     return result.rows;
   }

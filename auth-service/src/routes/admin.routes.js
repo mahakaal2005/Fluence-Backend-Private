@@ -27,7 +27,7 @@ router.put('/users/:userId/role', updateUserRole);
 
 // Admin wallet management
 router.get('/admin/pending-social-posts', WalletController.getPendingSocialPosts);
-router.put('/admin/verify-social-post/:transactionId', WalletController.verifySocialPost);
+router.put('/admin/verify-social-post/:postId', WalletController.verifySocialPost);
 
 // Background job management
 router.get('/admin/jobs/status', (req, res) => {

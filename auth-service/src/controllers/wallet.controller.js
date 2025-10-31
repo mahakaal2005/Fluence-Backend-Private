@@ -1,8 +1,11 @@
 import { StatusCodes } from 'http-status-codes';
 import { signToken } from '../utils/jwt.js';
+console.log('✅ signToken import check:', typeof signToken);
 
 // Points Wallet Service URL
 const POINTS_WALLET_SERVICE_URL = process.env.POINTS_WALLET_SERVICE_URL || 'http://localhost:4005';
+const CASHBACK_BUDGET_SERVICE_URL = process.env.CASHBACK_BUDGET_SERVICE_URL || 'http://localhost:4002';
+const SOCIAL_FEATURES_SERVICE_URL = process.env.SOCIAL_FEATURES_SERVICE_URL || 'http://localhost:4007';
 
 export const WalletController = {
   /**
@@ -37,11 +40,11 @@ export const WalletController = {
    */
   async verifySocialPost(req, res) {
     try {
-      const { transactionId } = req.params;
-      if (!transactionId) {
+      const { postId } = req.params;
+      if (!postId) {
         return res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
-          message: 'transactionId is required'
+          message: 'postId is required'
         });
       }
 
@@ -54,9 +57,9 @@ export const WalletController = {
 
       // Call Points Wallet Service to verify social post and update transaction status
       const response = await fetch(
-        `${POINTS_WALLET_SERVICE_URL}/api/points/verify-social/${transactionId}`,
+        `${SOCIAL_FEATURES_SERVICE_URL}/api/admin/social/posts/${postId}/approve`,
         {
-          method: 'PUT',
+          method: 'POST',
           headers: {
             'Authorization': `Bearer ${adminJwt}`,
             'Content-Type': 'application/json'
@@ -68,7 +71,7 @@ export const WalletController = {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
         return res.status(response.status).json({
           success: false,
-          message: errorData.message || 'Failed to verify social post in Points Wallet Service',
+          message: errorData.message || 'Failed to verify social post in Social Features Service',
           error: errorData.error || errorData.message
         });
       }

@@ -464,75 +464,96 @@ export class TransactionController {
     try {
       const { id } = req.params;
       const transaction = await TransactionModel.findById(id);
-
+  
       if (!transaction) {
         return res.status(404).json({
           success: false,
           error: 'Transaction not found'
         });
       }
-
-      const processedTransaction = await TransactionModel.process(id);
-
-      // Credit user's wallet points in Points Wallet Service
+  
+      // 🔹 STEP 1: Fetch reference_id and call Points Wallet Service BEFORE processing
       try {
         const { getConfig } = await import('../config/index.js');
         const config = getConfig();
-        const baseUrl = config.services.points;
-        const merchantBase = config.services.merchant;
-
-        // Build a minimal JWT-like token acceptable by the points service middleware
-        const payload = {
-          sub: processedTransaction.customer_id,
-          email: `${processedTransaction.customer_id}@internal`,
-          role: 'user'
-        };
-        const header = { alg: 'none', typ: 'JWT' };
+      
+        const { points: pointsBaseUrl, merchant: merchantBaseUrl } = config.services;
         const toBase64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-        const fakeJwt = `${toBase64(header)}.${toBase64(payload)}.`;
-
-        // Try to resolve merchant name for description enrichment
-        let merchantName = null;
-        try {
-          const adminPayload = { sub: 'system', email: 'system@internal', role: 'admin' };
-          const adminJwt = `${toBase64(header)}.${toBase64(adminPayload)}.`;
-          const resp = await fetch(`${merchantBase}/api/admin/merchants?merchantId=${processedTransaction.merchant_id}`, {
-            headers: { 'Authorization': `Bearer ${adminJwt}` }
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const first = Array.isArray(data?.data) ? data.data.find(m => m.id === processedTransaction.merchant_id) : null;
-            merchantName = first?.business_name || first?.businessName || null;
-          }
-        } catch {}
-
-        const body = {
-          amount: Number(processedTransaction.cashback_amount),
-          transactionType: 'cashback',
-          description: merchantName
-            ? `Cashback from ${merchantName}`
-            : 'Cashback credited',
-          referenceId: processedTransaction.id
+      
+        // 🔹 Helper to create minimal JWT-like tokens
+        const createFakeJwt = (payload) => {
+          const header = { alg: 'none', typ: 'JWT' };
+          return `${toBase64(header)}.${toBase64(payload)}.`;
         };
-
-        await fetch(`${baseUrl}/api/points/earn`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${fakeJwt}`
-          },
-          body: JSON.stringify(body)
+      
+        // 🔹 Optional merchant name lookup (non-fatal)
+        let merchantName = null;
+        const adminJwt = createFakeJwt({
+          sub: 'system',
+          email: 'system@internal',
+          role: 'admin'
         });
-      } catch (creditError) {
-        // Don't fail the processing if crediting points fails; log for later retries
-        console.error('Failed to credit points for transaction:', id, creditError);
+      
+        const merchantResp = await fetch(
+          `${merchantBaseUrl}/api/admin/merchants?merchantId=${transaction.merchant_id}`,
+          { headers: { Authorization: `Bearer ${adminJwt}` } }
+        );
+      
+        if (merchantResp.ok) {
+          const data = await merchantResp.json();
+          const match = Array.isArray(data?.data)
+            ? data.data.find((m) => m.id === transaction.merchant_id)
+            : null;
+          merchantName = match?.business_name || match?.businessName || null;
+        }
+      
+        // 🔹 Wallet service verification (Social Post)
+        const { id } = transaction;
+        if (!id) {
+          console.warn('⚠️ No reference_id found, skipping wallet service call.');
+        } else {
+          console.log('💬 Verifying social post for id:', id);
+      
+          const walletResp = await fetch(
+            // [MODIFIED] Using the new verify-social endpoint
+            `${pointsBaseUrl}/api/points/verify-social/${id}`, 
+            {
+              // [MODIFIED] Method is now PUT
+              method: 'PUT', 
+              headers: {
+                // [MODIFIED] Using adminJwt as this endpoint requires admin rights
+                'Authorization': `Bearer ${adminJwt}`, 
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+      
+          if (!walletResp.ok) {
+            throw new Error(`Wallet service returned ${walletResp.status}: ${walletResp.statusText}`);
+          }
+      
+          const walletData = await walletResp.json();
+          console.log('✅ Social post verification response:', walletData);
+        }
+      } catch (err) {
+        console.error('⚠️ Wallet verification failed:', err);
+        return res.status(400).json({
+          success: false,
+          error: 'Failed to verify wallet transaction',
+          message: err.message
+        });
       }
-
+      
+  
+      // 🔹 STEP 2: Process the transaction only after wallet call completes successfully
+      const processedTransaction = await TransactionModel.process(id);
+  
       res.json({
         success: true,
         data: processedTransaction,
         message: 'Transaction processed successfully'
       });
+  
     } catch (error) {
       console.error('Error processing transaction:', error);
       res.status(500).json({
@@ -542,6 +563,8 @@ export class TransactionController {
       });
     }
   }
+  
+  
 
   /**
    * Get transaction analytics
