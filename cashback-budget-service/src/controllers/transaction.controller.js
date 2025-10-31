@@ -57,7 +57,7 @@ export class TransactionController {
         const earnBody = {
           amount: Math.round(Number(amount) || 0),
           transactionType: 'cashback',
-          description: `Cashback pending (txn ${transaction.id})`,
+          description: 'Cashback pending',
           referenceId: transaction.id,
           socialPostRequired: true
         };
@@ -510,8 +510,8 @@ export class TransactionController {
           amount: Number(processedTransaction.cashback_amount),
           transactionType: 'cashback',
           description: merchantName
-            ? `Cashback from ${merchantName} (txn ${processedTransaction.id})`
-            : `Cashback credited (txn ${processedTransaction.id})`,
+            ? `Cashback from ${merchantName}`
+            : 'Cashback credited',
           referenceId: processedTransaction.id
         };
 
