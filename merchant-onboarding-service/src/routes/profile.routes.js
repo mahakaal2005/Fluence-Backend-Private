@@ -10,7 +10,9 @@ import {
   getMerchantProfileStats,
   searchMerchantProfiles,
   getMerchantProfileWithActivity,
-  updateMerchantProfileStatus
+  updateMerchantProfileStatus,
+  uploadProfileImage,
+  uploadSingleImage
 } from '../controllers/profile.controller.js';
 
 const router = Router();
@@ -20,6 +22,7 @@ router.get('/active', getActiveMerchantProfiles);
 router.get('/business-type/:businessType', getMerchantProfilesByBusinessType);
 router.get('/search', searchMerchantProfiles);
 router.get('/stats', getMerchantProfileStats);
+router.put('/:merchantId/avatar', uploadSingleImage('image'), uploadProfileImage);
 
 // Protected routes (require authentication)
 router.use(verifyAuthToken());

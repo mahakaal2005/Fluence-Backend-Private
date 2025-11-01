@@ -146,6 +146,32 @@ export class SocialController {
         [userId, socialAccountId, content, mediaUrls || [], postType || 'text', scheduledAt, transactionId || null]
       );
 
+      // Update points_transactions table to set social_post_made = true
+      // Map original_transaction_id from social_posts to reference_id in points_transactions
+      if (transactionId) {
+        try {
+          // Convert UUID to string for comparison (reference_id is TEXT)
+          const referenceId = typeof transactionId === 'string' ? transactionId : transactionId.toString();
+          
+          const updateResult = await pool.query(
+            `UPDATE points_transactions 
+             SET social_post_made = true, updated_at = NOW()
+             WHERE reference_id = $1 AND social_post_made = false`,
+            [referenceId]
+          );
+
+          if (updateResult.rowCount > 0) {
+            console.log(`Updated ${updateResult.rowCount} point transaction(s) to set social_post_made = true for reference_id: ${referenceId}`);
+          } else {
+            console.log(`No points transactions found with reference_id: ${referenceId} or already marked as social_post_made`);
+          }
+        } catch (pointsUpdateError) {
+          // Log error but don't fail the post creation
+          console.error('Failed to update points_transactions social_post_made status:', pointsUpdateError);
+          // Continue execution - post creation should succeed even if points update fails
+        }
+      }
+
       res.status(StatusCodes.CREATED).json({
         success: true,
         data: post.rows[0],

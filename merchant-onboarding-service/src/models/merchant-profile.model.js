@@ -61,19 +61,78 @@ export class MerchantProfileModel {
       businessAddress,
       businessLicense,
       taxId,
-      bankAccountDetails
+      bankAccountDetails,
+      profileImageUrl
     } = updateData;
+
+    // Build dynamic update query based on provided fields
+    const updates = [];
+    const params = [profileId];
+    let paramCount = 1;
+
+    if (businessName !== undefined) {
+      paramCount++;
+      updates.push(`business_name = $${paramCount}`);
+      params.push(businessName);
+    }
+    if (businessType !== undefined) {
+      paramCount++;
+      updates.push(`business_type = $${paramCount}`);
+      params.push(businessType);
+    }
+    if (contactPerson !== undefined) {
+      paramCount++;
+      updates.push(`contact_person = $${paramCount}`);
+      params.push(contactPerson);
+    }
+    if (email !== undefined) {
+      paramCount++;
+      updates.push(`email = $${paramCount}`);
+      params.push(email.toLowerCase());
+    }
+    if (phone !== undefined) {
+      paramCount++;
+      updates.push(`phone = $${paramCount}`);
+      params.push(phone);
+    }
+    if (businessAddress !== undefined) {
+      paramCount++;
+      updates.push(`business_address = $${paramCount}`);
+      params.push(businessAddress);
+    }
+    if (businessLicense !== undefined) {
+      paramCount++;
+      updates.push(`business_license = $${paramCount}`);
+      params.push(businessLicense);
+    }
+    if (taxId !== undefined) {
+      paramCount++;
+      updates.push(`tax_id = $${paramCount}`);
+      params.push(taxId);
+    }
+    if (bankAccountDetails !== undefined) {
+      paramCount++;
+      updates.push(`bank_account_details = $${paramCount}`);
+      params.push(bankAccountDetails);
+    }
+    if (profileImageUrl !== undefined) {
+      paramCount++;
+      updates.push(`profile_image_url = $${paramCount}`);
+      params.push(profileImageUrl);
+    }
+
+    if (updates.length === 0) {
+      // No updates provided, return current profile
+      return this.getProfileById(profileId);
+    }
+
+    updates.push('updated_at = NOW()');
 
     const result = await pool.query(
       `UPDATE merchant_profiles 
-       SET business_name = $2, business_type = $3, contact_person = $4,
-           email = $5, phone = $6, business_address = $7, business_license = $8,
-           tax_id = $9, bank_account_details = $10, updated_at = NOW()
+       SET ${updates.join(', ')}
        WHERE id = $1 RETURNING *`,
-      [
-        profileId, businessName, businessType, contactPerson, email.toLowerCase(),
-        phone, businessAddress, businessLicense, taxId, bankAccountDetails
-      ]
+      params
     );
     return result.rows[0] || null;
   }

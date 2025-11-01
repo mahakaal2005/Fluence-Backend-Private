@@ -2,6 +2,8 @@ import { StatusCodes } from 'http-status-codes';
 import { z } from 'zod';
 import { ApiError } from '../middleware/error.js';
 import { MerchantProfileModel } from '../models/merchant-profile.model.js';
+import { uploadImageToFirebase, deleteImageFromFirebase } from '../services/firebase-storage.service.js';
+import { uploadSingleImage, validateImageFile } from '../middleware/upload.middleware.js';
 
 // Validation schemas
 const profileUpdateSchema = z.object({
@@ -17,7 +19,8 @@ const profileUpdateSchema = z.object({
     accountNumber: z.string().optional(),
     bankName: z.string().optional(),
     routingNumber: z.string().optional()
-  }).optional()
+  }).optional(),
+  profileImageUrl: z.string().url().optional()
 });
 
 const paginationSchema = z.object({
@@ -305,3 +308,82 @@ export async function updateMerchantProfileStatus(req, res, next) {
     next(err);
   }
 }
+
+/**
+ * Upload merchant profile image (public endpoint, no auth required)
+ */
+export async function uploadProfileImage(req, res, next) {
+  try {
+    const { merchantId } = req.params;
+    
+    if (!merchantId) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Merchant ID is required');
+    }
+
+    if (!req.file) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'No image file provided');
+    }
+
+    // Get merchant profile by ID
+    const profile = await MerchantProfileModel.getProfileById(merchantId);
+    
+    if (!profile) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Merchant profile not found');
+    }
+
+    if (profile.status !== 'active') {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Cannot update image for inactive profile');
+    }
+
+    // Validate image file magic numbers for additional security
+    try {
+      validateImageFile(req.file.buffer);
+    } catch (validationError) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, validationError.message);
+    }
+
+    let imageUrl = null;
+    const oldImageUrl = profile.profile_image_url;
+
+    try {
+      // Upload new image to Firebase Storage
+      imageUrl = await uploadImageToFirebase(
+        req.file.buffer,
+        req.file.originalname,
+        'merchant-profiles'
+      );
+
+      // Update profile with new image URL
+      const updatedProfile = await MerchantProfileModel.updateProfile(profile.id, {
+        profileImageUrl: imageUrl
+      });
+
+      // Delete old image from Firebase Storage (non-blocking)
+      if (oldImageUrl) {
+        deleteImageFromFirebase(oldImageUrl).catch(err => {
+          console.error('Failed to delete old image:', err);
+          // Don't fail the request if old image deletion fails
+        });
+      }
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: updatedProfile,
+        message: 'Profile image uploaded successfully'
+      });
+    } catch (uploadError) {
+      // If database update fails after upload, try to delete the uploaded image
+      if (imageUrl) {
+        deleteImageFromFirebase(imageUrl).catch(err => {
+          console.error('Failed to cleanup uploaded image:', err);
+        });
+      }
+      throw uploadError;
+    }
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Export middleware for use in routes
+export { uploadSingleImage };

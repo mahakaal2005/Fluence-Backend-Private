@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS merchant_profiles (
   otp_attempts INTEGER DEFAULT 0,
   approved_at TIMESTAMPTZ DEFAULT NOW(),
   approved_by UUID, -- References auth service admin users
+  profile_image_url TEXT, -- Firebase Storage URL for merchant profile image
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
