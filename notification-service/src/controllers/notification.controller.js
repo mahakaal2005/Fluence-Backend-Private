@@ -233,4 +233,38 @@ export class NotificationController {
       next(error);
     }
   }
+
+  /**
+   * Internal endpoint for service-to-service notification creation
+   * This endpoint allows other microservices to create notifications
+   */
+  static async createInternalNotification(req, res, next) {
+    try {
+      const { userId, type, title, message, data, sentBy } = req.body;
+
+      if (!userId || !title || !message) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'userId, title, and message are required');
+      }
+
+      // Default to 'in_app' type if not specified
+      const notificationType = type || 'in_app';
+
+      const notification = await NotificationService.sendNotification(
+        userId,
+        notificationType,
+        title,
+        message,
+        data || null,
+        sentBy || null
+      );
+
+      res.status(StatusCodes.CREATED).json({
+        success: true,
+        message: 'Notification created successfully',
+        data: notification
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

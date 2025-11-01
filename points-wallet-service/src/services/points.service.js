@@ -1,5 +1,6 @@
 import { PointsTransactionModel } from '../models/points-transaction.model.js';
 import { WalletBalanceModel } from '../models/wallet-balance.model.js';
+import { NotificationClient } from './notification.client.js';
 
 export class PointsService {
   /**
@@ -14,6 +15,21 @@ export class PointsService {
       referenceId,
       socialPostRequired
     });
+
+    // Send notification for points earned
+    try {
+      if (amount > 0) {
+        await NotificationClient.sendPointsAvailableNotification(userId, amount, description);
+        
+        // If social post is required, send a reminder
+        if (socialPostRequired) {
+          await NotificationClient.sendSocialPostReminder(userId, transaction.id, description);
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail the transaction
+      console.error('Failed to send notification for points award:', error.message);
+    }
 
     return transaction;
   }
@@ -35,6 +51,14 @@ export class PointsService {
       description,
       referenceId
     });
+
+    // Send notification for points redeemed
+    try {
+      await NotificationClient.sendPointsRedeemedNotification(userId, amount, description);
+    } catch (error) {
+      // Log error but don't fail the transaction
+      console.error('Failed to send notification for points redemption:', error.message);
+    }
 
     return transaction;
   }

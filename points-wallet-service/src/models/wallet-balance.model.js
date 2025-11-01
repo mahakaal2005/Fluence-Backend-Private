@@ -308,7 +308,7 @@ export class WalletBalanceModel {
         );
       } else {
         const balance = balanceResult.rows[0];
-        const newAvailableBalance = balance.available_balance + amount;
+        const newAvailableBalance = balance.available_balance;
         const newTotalEarned = balance.total_earned + (amount > 0 ? amount : 0);
         const newTotalRedeemed = balance.total_redeemed + (amount < 0 ? Math.abs(amount) : 0);
         

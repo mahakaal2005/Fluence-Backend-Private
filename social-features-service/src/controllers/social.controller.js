@@ -172,6 +172,31 @@ export class SocialController {
         }
       }
 
+      // Send notification for social post creation
+      try {
+        const { NotificationClient } = await import('../services/notification.client.js');
+        // Get platform name from account
+        const platformResult = await pool.query(
+          `SELECT sp.name as platform_name 
+           FROM social_accounts sa
+           JOIN social_platforms sp ON sa.platform_id = sp.id
+           WHERE sa.id = $1`,
+          [socialAccountId]
+        );
+        const platformName = platformResult.rows.length > 0 ? platformResult.rows[0].platform_name : null;
+        
+        await NotificationClient.sendSocialPostCreatedNotification(
+          userId,
+          post.rows[0].id,
+          platformName,
+          postType || 'text',
+          userId // sentBy is the user who created the post
+        );
+      } catch (notificationErr) {
+        // Do not block social post creation if notification fails
+        console.error('Failed to send social post creation notification:', notificationErr.message);
+      }
+
       res.status(StatusCodes.CREATED).json({
         success: true,
         data: post.rows[0],

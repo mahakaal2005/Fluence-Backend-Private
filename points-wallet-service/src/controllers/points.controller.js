@@ -3,6 +3,7 @@ import { PointsTransactionModel } from '../models/points-transaction.model.js';
 import { ApiError } from '../middleware/error.js';
 import { getPool } from '../config/database.js';
 import { WalletBalanceModel } from '../models/wallet-balance.model.js';
+import { PointsService } from '../services/points.service.js';
 
 
 export class PointsController {
@@ -30,18 +31,53 @@ export class PointsController {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Transaction type is required');
       }
       
-      const transaction = await PointsTransactionModel.createTransaction({
-        userId,
-        amount,
-        transactionType,
-        description,
-        referenceId,
-        socialPostRequired: (socialPostRequired !== undefined)
-          ? socialPostRequired
-          : (transactionType === 'cashback'),
-        timeBufferEndsAt,
-        expiresAt
-      });
+      // Determine if social post is required (default to true for cashback transactions)
+      const requiresSocialPost = (socialPostRequired !== undefined)
+        ? socialPostRequired
+        : (transactionType === 'cashback');
+
+      // Use PointsService.awardPoints() which handles notifications
+      // Note: PointsService.awardPoints doesn't support timeBufferEndsAt/expiresAt yet
+      // So we'll call the model directly for those cases, but still send notifications
+      let transaction;
+      if (timeBufferEndsAt || expiresAt) {
+        // If we have time buffer or expiration, we need to use the model directly
+        // but still send notifications manually
+        transaction = await PointsTransactionModel.createTransaction({
+          userId,
+          amount,
+          transactionType,
+          description,
+          referenceId,
+          socialPostRequired: requiresSocialPost,
+          timeBufferEndsAt,
+          expiresAt
+        });
+
+        // Send notifications manually since we bypassed the service
+        try {
+          const { NotificationClient } = await import('../services/notification.client.js');
+          if (amount > 0) {
+            await NotificationClient.sendPointsAvailableNotification(userId, amount, description || 'Points earned');
+            
+            if (requiresSocialPost) {
+              await NotificationClient.sendSocialPostReminder(userId, transaction.id, description || 'Points earned');
+            }
+          }
+        } catch (notificationErr) {
+          console.error('Failed to send notification for points award:', notificationErr.message);
+        }
+      } else {
+        // Use the service method which handles notifications automatically
+        transaction = await PointsService.awardPoints(
+          userId,
+          amount,
+          transactionType,
+          description || 'Points earned',
+          referenceId,
+          requiresSocialPost
+        );
+      }
 
       // Explicitly reflect pending points in wallet_balances (in addition to DB trigger)
       try {
@@ -232,68 +268,122 @@ export class PointsController {
   
       const pool = getPool();
       const updatedTransactions = [];
-  
+      // Track users and their total points to send notifications once per user
+      const userPointsMap = new Map(); // userId -> { totalPoints, description }
+
       // 2️⃣ Process each transaction
       for (const transaction of filteredPending) {
-        const { user_id, amount } = transaction;
-  
+        const { user_id, amount, description } = transaction;
+
         // Get current wallet balance
         const walletResult = await pool.query(
           `SELECT available_balance, pending_balance, total_earned, total_redeemed, total_expired
            FROM wallet_balances WHERE user_id = $1`,
           [user_id]
         );
-  
+
         if (walletResult.rows.length === 0) {
           console.warn(`⚠️ No wallet found for user ${user_id}, skipping transaction ${transaction.id}`);
           continue;
         }
-  
+
         const wallet = walletResult.rows[0];
         //REMINDER: here i want to print wallet amount before and after the update
         console.log('amount: ', amount);
         console.log(`Wallet amount before update: ${wallet.available_balance}`);
         // 3️⃣ Compute updated balances
+        // Note: Points are moved from pending to available by the database trigger
         const updatedBalance = {
-          availableBalance: Number(wallet.available_balance),
+          availableBalance: Number(wallet.available_balance) , // Points moved to available
           pendingBalance: Math.max(0, Number(wallet.pending_balance) - Number(amount)),
           totalEarned: Number(wallet.total_earned),
           totalRedeemed: Number(wallet.total_redeemed),
           totalExpired: Number(wallet.total_expired)
         };
-  
+
         // 4️⃣ Update wallet balance before confirming the transaction
         const updatedWallet = await WalletBalanceModel.updateWalletBalance(user_id, updatedBalance);
-  
+
         if (!updatedWallet) {
           console.error(`❌ Failed to update wallet for user ${user_id}, skipping transaction ${transaction.id}`);
           continue;
         }
         
         console.log(`Wallet amount after update: ${updatedBalance.availableBalance}`);
-  
-        // 5️⃣ Mark transaction as available
+
+        // 5️⃣ Mark transaction as available and update description
+        // Update description to reflect that cashback is now available (not pending)
+        const updatedDescription = description && description.includes('pending')
+          ? description.replace(/pending/gi, 'available').replace(/Cashback pending/gi, 'Cashback available')
+          : (description || 'Cashback available');
+        
         const result = await pool.query(
           `UPDATE points_transactions 
            SET status = 'available',
                social_post_verified = true,
+               description = $2,
                processed_at = NOW(),
                updated_at = NOW()
            WHERE id = $1 AND status = 'pending'
            RETURNING *`,
-          [transaction.id]
+          [transaction.id, updatedDescription]
         );
-  
+
         if (result.rows.length > 0) {
-          updatedTransactions.push(result.rows[0]);
+          const updatedTransaction = result.rows[0];
+          updatedTransactions.push(updatedTransaction);
+          
+          // Use description from the updated transaction
+          const finalDescription = updatedTransaction.description || 'Cashback available';
+          
+          // Track points per user for notifications
+          if (userPointsMap.has(user_id)) {
+            const existing = userPointsMap.get(user_id);
+            // existing.totalPoints += Number(amount);
+            // Update description to reflect the updated transaction (use the latest one)
+            existing.description = finalDescription;
+          } else {
+            userPointsMap.set(user_id, {
+              totalPoints: Number(amount),
+              description: finalDescription
+            });
+          }
         }
       }
-  
+
       if (updatedTransactions.length === 0) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'No transactions were updated');
       }
-  
-      // 6️⃣ Respond with summary
+
+      // 6️⃣ Send notifications for each user
+      try {
+        const { NotificationClient } = await import('../services/notification.client.js');
+        const adminId = req.user?.id || 'system';
+        
+        // Send notifications for each unique user
+        for (const [userId, { totalPoints, description }] of userPointsMap.entries()) {
+          // Send social post verified notification
+          await NotificationClient.sendSocialPostVerifiedNotification(
+            userId,
+            referenceId,
+            totalPoints,
+            adminId
+          );
+          
+          // Send points available notification
+          await NotificationClient.sendPointsAvailableNotification(
+            userId,
+            totalPoints,
+            description,
+            adminId
+          );
+        }
+      } catch (notificationErr) {
+        // Do not block verification if notification fails
+        console.error('Failed to send verification notifications:', notificationErr.message);
+      }
+
+      // 7️⃣ Respond with summary
       res.status(StatusCodes.OK).json({
         success: true,
         data: {

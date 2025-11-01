@@ -1,5 +1,6 @@
 import { TransactionModel } from '../models/transaction.model.js';
 import { validationResult } from 'express-validator';
+import { NotificationClient } from '../services/notification.client.js';
 
 export class TransactionController {
   /**
@@ -29,6 +30,30 @@ export class TransactionController {
         return res.status(404).json({ success: false, error: 'Campaign not found' });
       }
 
+      // Get merchant name for notification (optional)
+      let merchantName = null;
+      try {
+        const { getConfig } = await import('../config/index.js');
+        const config = getConfig();
+        const merchantBase = config.services.merchant;
+        
+        // Try to get merchant info (optional - don't fail if this fails)
+        const merchantResponse = await fetch(`${merchantBase}/api/merchants/${campaign.merchant_id}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (merchantResponse.ok) {
+          const merchantData = await merchantResponse.json();
+          merchantName = merchantData?.data?.businessName || merchantData?.data?.name || null;
+        }
+      } catch (merchantErr) {
+        // Ignore errors when fetching merchant info - it's optional
+        console.log('Could not fetch merchant info for notification:', merchantErr.message);
+      }
+
       // Ensure original transaction id (required by schema)
       const { randomUUID } = await import('crypto');
       const originalTransactionId = req.body.originalTransactionId || randomUUID();
@@ -41,6 +66,20 @@ export class TransactionController {
         cashbackAmount: amount,
         cashbackPercentage: campaign.cashback_percentage
       });
+
+      // Send transaction completion notification
+      try {
+        await NotificationClient.sendTransactionCompletionNotification(
+          customerId,
+          transaction.id,
+          amount,
+          merchantName,
+          description || campaign.name || 'Cashback transaction'
+        );
+      } catch (notificationErr) {
+        // Do not block transaction creation if notification fails
+        console.error('Failed to send transaction completion notification:', notificationErr.message);
+      }
 
       // Also create a pending points entry in Points Wallet Service for the user
       try {
@@ -527,6 +566,7 @@ export class TransactionController {
               }
             }
           );
+
       
           if (!walletResp.ok) {
             throw new Error(`Wallet service returned ${walletResp.status}: ${walletResp.statusText}`);

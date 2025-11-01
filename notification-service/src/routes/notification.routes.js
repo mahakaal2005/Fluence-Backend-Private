@@ -1,10 +1,13 @@
 import { Router } from 'express';
-import { verifyAuthToken } from '../middleware/auth.js';
+import { verifyAuthToken, verifyServiceAuth } from '../middleware/auth.js';
 import { NotificationController } from '../controllers/notification.controller.js';
 
 const router = Router();
 
-// All notification routes require authentication
+// Internal service-to-service endpoint (before auth middleware)
+router.post('/internal/create', verifyServiceAuth(), NotificationController.createInternalNotification);
+
+// All other notification routes require authentication
 router.use(verifyAuthToken());
 
 // Notification management routes
