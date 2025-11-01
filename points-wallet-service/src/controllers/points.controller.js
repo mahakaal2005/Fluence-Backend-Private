@@ -250,7 +250,9 @@ export class PointsController {
         }
   
         const wallet = walletResult.rows[0];
-  
+        //REMINDER: here i want to print wallet amount before and after the update
+        console.log('amount: ', amount);
+        console.log(`Wallet amount before update: ${wallet.available_balance}`);
         // 3️⃣ Compute updated balances
         const updatedBalance = {
           availableBalance: Number(wallet.available_balance) + Number(amount),
@@ -267,6 +269,8 @@ export class PointsController {
           console.error(`❌ Failed to update wallet for user ${user_id}, skipping transaction ${transaction.id}`);
           continue;
         }
+        
+        console.log(`Wallet amount after update: ${updatedBalance.availableBalance}`);
   
         // 5️⃣ Mark transaction as available
         const result = await pool.query(
