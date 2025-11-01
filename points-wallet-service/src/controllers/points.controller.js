@@ -255,7 +255,7 @@ export class PointsController {
         console.log(`Wallet amount before update: ${wallet.available_balance}`);
         // 3️⃣ Compute updated balances
         const updatedBalance = {
-          availableBalance: Number(wallet.available_balance) + Number(amount),
+          availableBalance: Number(wallet.available_balance),
           pendingBalance: Math.max(0, Number(wallet.pending_balance) - Number(amount)),
           totalEarned: Number(wallet.total_earned),
           totalRedeemed: Number(wallet.total_redeemed),
