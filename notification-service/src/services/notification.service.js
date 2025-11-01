@@ -4,14 +4,15 @@ export class NotificationService {
   /**
    * Send notification to user
    */
-  static async sendNotification(userId, type, title, message, data = null) {
+  static async sendNotification(userId, type = 'in_app', title, message, data = null, sentBy = null) {
     const notification = await NotificationModel.createNotification({
       userId,
-      type,
+      type: type || 'in_app', // Default to 'in_app' for all notifications
       title,
       message,
       data,
-      sentAt: new Date()
+      sentAt: new Date(),
+      sentBy // User/service ID that triggered the notification
     });
 
     return notification;
@@ -20,46 +21,46 @@ export class NotificationService {
   /**
    * Send social post reminder
    */
-  static async sendSocialPostReminder(userId, transactionId, socialPostUrl) {
+  static async sendSocialPostReminder(userId, transactionId, socialPostUrl, sentBy = null) {
     const title = 'Social Post Reminder';
     const message = 'Don\'t forget to share your experience on social media to earn points!';
     const data = {
       transactionId,
       socialPostUrl,
-      type: 'social_post_reminder'
+      category: 'social_post_reminder'
     };
 
-    return await this.sendNotification(userId, 'social_post_reminder', title, message, data);
+    return await this.sendNotification(userId, 'in_app', title, message, data, sentBy);
   }
 
   /**
    * Send points available notification
    */
-  static async sendPointsAvailableNotification(userId, pointsAmount, description) {
+  static async sendPointsAvailableNotification(userId, pointsAmount, description, sentBy = null) {
     const title = 'Points Available!';
     const message = `You've earned ${pointsAmount} points: ${description}`;
     const data = {
       pointsAmount,
       description,
-      type: 'points_available'
+      category: 'points_available'
     };
 
-    return await this.sendNotification(userId, 'points_available', title, message, data);
+    return await this.sendNotification(userId, 'in_app', title, message, data, sentBy);
   }
 
   /**
    * Send points expiring notification
    */
-  static async sendPointsExpiringNotification(userId, pointsAmount, expirationDate) {
+  static async sendPointsExpiringNotification(userId, pointsAmount, expirationDate, sentBy = null) {
     const title = 'Points Expiring Soon';
     const message = `You have ${pointsAmount} points expiring on ${expirationDate}`;
     const data = {
       pointsAmount,
       expirationDate,
-      type: 'points_expiring'
+      category: 'points_expiring'
     };
 
-    return await this.sendNotification(userId, 'points_expiring', title, message, data);
+    return await this.sendNotification(userId, 'in_app', title, message, data, sentBy);
   }
 
   /**

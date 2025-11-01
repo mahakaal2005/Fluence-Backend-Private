@@ -1,6 +1,53 @@
 import { getPool } from '../config/database.js';
+import { getConfig } from '../config/index.js';
 
 export class NotificationModel {
+  /**
+   * Get user email from database or auth service
+   */
+  static async getUserEmail(userId) {
+    if (!userId) return null;
+
+    try {
+      // First, try to get from database directly (faster if shared DB)
+      const pool = getPool();
+      const dbResult = await pool.query(
+        `SELECT email FROM users WHERE id = $1 LIMIT 1`,
+        [userId]
+      );
+      
+      if (dbResult.rows.length > 0 && dbResult.rows[0].email) {
+        return dbResult.rows[0].email;
+      }
+    } catch (dbError) {
+      // If database query fails (separate DB or table doesn't exist), try API
+      console.log('Database query failed, trying API:', dbError.message);
+      
+      try {
+        const config = getConfig();
+        const authServiceUrl = config.services.auth;
+        const serviceApiKey = process.env.SERVICE_API_KEY || 'internal-service-key';
+
+        const response = await fetch(`${authServiceUrl}/api/auth/internal/users/${userId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Service-API-Key': serviceApiKey
+          }
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          return result?.user?.email || result?.email || null;
+        }
+      } catch (apiError) {
+        console.error('API call also failed:', apiError.message);
+      }
+    }
+    
+    return null;
+  }
+
   /**
    * Create a new notification
    */
@@ -8,17 +55,51 @@ export class NotificationModel {
     const pool = getPool();
     const {
       userId,
-      type,
-      title,
+      type = 'in_app', // Default to 'in_app' if not specified
+      title, // Will be mapped to 'subject' column
       message,
-      data,
-      sentAt
+      data = null, // Additional data to include in metadata
+      sentAt = new Date(),
+      sentBy = null, // User/service ID that triggered the notification
+      recipient = null // Will be fetched from auth service if not provided
     } = notificationData;
+
+    // Fetch user email if recipient not provided
+    let userEmail = recipient;
+    if (!userEmail && userId) {
+      userEmail = await this.getUserEmail(userId);
+    }
+    
+    // Fallback to default if still no email found
+    if (!userEmail) {
+      userEmail = 'user@fluence.com';
+      console.warn(`Could not fetch email for user ${userId}, using default recipient`);
+    }
+
+    // Build metadata object with sentAt and sentBy
+    const sentAtISO = sentAt && sentAt.toISOString 
+      ? sentAt.toISOString() 
+      : (typeof sentAt === 'string' ? sentAt : (sentAt ? new Date(sentAt).toISOString() : new Date().toISOString()));
+    
+    const metadata = {
+      sentAt: sentAtISO,
+      ...(sentBy && { sentBy }),
+      ...(data && typeof data === 'object' && !Array.isArray(data) ? data : (data ? { customData: data } : {}))
+    };
 
     const result = await pool.query(
       `INSERT INTO notifications (user_id, type, recipient, subject, message, metadata, sent_at, status) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [userId, type, 'user@fluence.com', title, message, data, sentAt, 'sent']
+      [
+        userId,
+        type,
+        userEmail, // Use fetched user email
+        title, // Maps to 'subject' column
+        message,
+        JSON.stringify(metadata), // Ensure metadata is properly stringified JSONB
+        sentAt,
+        'sent'
+      ]
     );
     return result.rows[0];
   }

@@ -90,3 +90,26 @@ export function optionalAuth() {
     }
   };
 }
+
+/**
+ * Verify service-to-service authentication using API key
+ * This allows internal microservices to call the notification service
+ */
+export function verifyServiceAuth() {
+  return async (req, res, next) => {
+    try {
+      const serviceApiKey = req.headers['x-service-api-key'] || req.headers['x-service-key'];
+      const expectedKey = process.env.SERVICE_API_KEY || 'internal-service-key';
+
+      if (!serviceApiKey || serviceApiKey !== expectedKey) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Service authentication required');
+      }
+
+      // Mark as service request
+      req.isServiceRequest = true;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
