@@ -294,7 +294,7 @@ export class PointsController {
         // 3️⃣ Compute updated balances
         // Note: Points are moved from pending to available by the database trigger
         const updatedBalance = {
-          availableBalance: Number(wallet.available_balance) + Number(amount), // Points moved to available
+          availableBalance: Number(wallet.available_balance) , // Points moved to available
           pendingBalance: Math.max(0, Number(wallet.pending_balance) - Number(amount)),
           totalEarned: Number(wallet.total_earned),
           totalRedeemed: Number(wallet.total_redeemed),
@@ -339,7 +339,7 @@ export class PointsController {
           // Track points per user for notifications
           if (userPointsMap.has(user_id)) {
             const existing = userPointsMap.get(user_id);
-            existing.totalPoints += Number(amount);
+            // existing.totalPoints += Number(amount);
             // Update description to reflect the updated transaction (use the latest one)
             existing.description = finalDescription;
           } else {
