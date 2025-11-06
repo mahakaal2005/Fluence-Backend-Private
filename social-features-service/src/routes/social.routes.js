@@ -4,8 +4,14 @@ import { SocialController } from '../controllers/social.controller.js';
 
 const router = Router();
 
+// Instagram OAuth callback (public - called by Instagram)
+router.get('/instagram/callback', SocialController.handleInstagramCallback);
+
 // Social account routes (require authentication)
 router.use(verifyAuthToken());
+
+// Instagram OAuth endpoints
+router.post('/instagram/authorize', SocialController.initiateInstagramOAuth);
 
 // Social account management
 router.post('/accounts/connect', SocialController.connectSocialAccount);

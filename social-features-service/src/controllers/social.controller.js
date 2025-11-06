@@ -1,6 +1,8 @@
 import { StatusCodes } from 'http-status-codes';
 import { getPool } from '../config/database.js';
 import { ApiError } from '../middleware/error.js';
+import { InstagramOAuthService } from '../services/instagram-oauth.service.js';
+import { getConfig } from '../config/index.js';
 
 export class SocialController {
   /**
@@ -707,6 +709,159 @@ export class SocialController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  /**
+   * Initiate Instagram OAuth flow
+   * Returns the authorization URL for the user to visit
+   * Uses Instagram Graph API with Business Login by default (direct Instagram login, NO Facebook required)
+   */
+  static async initiateInstagramOAuth(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const config = getConfig();
+      
+      // Use Instagram Graph API with Business Login by default (direct Instagram login, NO Facebook)
+      // Set useFacebookLogin: true to use Facebook Login (requires Facebook Page)
+      const useFacebookLogin = req.body.useFacebookLogin === true;
+      
+      // Generate redirect URI - should match what's configured in Meta Developer Console
+      const redirectUri = req.body.redirectUri || 
+        process.env.INSTAGRAM_REDIRECT_URI || 
+        `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
+
+      // Generate state parameter for security (optional but recommended)
+      const state = Buffer.from(JSON.stringify({ userId, timestamp: Date.now() })).toString('base64');
+
+      // Generate OAuth URL
+      const authUrl = InstagramOAuthService.generateAuthUrl(redirectUri, state, useFacebookLogin);
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          authUrl,
+          redirectUri,
+          state,
+          method: useFacebookLogin ? 'Instagram Graph API (Facebook Login)' : 'Instagram Graph API (Business Login - Default, NO Facebook required)'
+        },
+        message: 'Visit the authUrl to authorize Instagram access'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Handle Instagram OAuth callback
+   * This endpoint receives the authorization code and completes the OAuth flow
+   * Note: For better security, consider handling this on the frontend and sending the code to a protected endpoint
+   */
+  static async handleInstagramCallback(req, res, next) {
+    try {
+      const { code, state, error, error_reason, error_description } = req.query;
+
+      // Check for OAuth errors
+      if (error) {
+        // Redirect to frontend error page or return error
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(error_description || error_reason || 'Authorization failed')}`);
+      }
+
+      if (!code) {
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent('Authorization code is required')}`);
+      }
+
+      // Extract userId from state parameter
+      let userId = null;
+      if (state) {
+        try {
+          const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+          userId = stateData.userId;
+        } catch (e) {
+          console.error('Failed to parse state parameter:', e);
+        }
+      }
+
+      // If no userId in state, try to get from auth token (if provided)
+      if (!userId && req.user?.id) {
+        userId = req.user.id;
+      }
+
+      if (!userId) {
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent('User authentication required')}`);
+      }
+
+      // Get redirect URI (should match the one used in initiateInstagramOAuth)
+      const config = getConfig();
+      const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || 
+        `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
+
+      // Determine which API to use based on state or default to Instagram Business Login
+      // Instagram Business Login = direct Instagram login, NO Facebook required (default)
+      // Facebook Login = requires Facebook Page connection
+      const useFacebookLogin = req.query.useFacebookLogin === 'true';
+
+      // Complete OAuth flow and connect account
+      const connectedAccount = await InstagramOAuthService.connectInstagramAccount(
+        code,
+        redirectUri,
+        userId,
+        useFacebookLogin
+      );
+
+      // Check if this is a mobile app callback (deep link) or web callback
+      // Deep links use custom URL schemes (e.g., myapp://, fluence://)
+      // Web URLs use http:// or https://
+      const isDeepLink = redirectUri && 
+        !redirectUri.startsWith('http://') && 
+        !redirectUri.startsWith('https://') &&
+        redirectUri.includes('://');
+
+      if (isDeepLink) {
+        // For mobile apps, return JSON response instead of redirecting
+        // The Flutter app will handle the deep link callback
+        return res.status(StatusCodes.OK).json({
+          success: true,
+          data: connectedAccount,
+          message: 'Instagram account connected successfully',
+          deepLink: redirectUri.includes('?') 
+            ? `${redirectUri}&success=true&accountId=${connectedAccount.id}`
+            : `${redirectUri}?success=true&accountId=${connectedAccount.id}`
+        });
+      }
+
+      // For web apps, redirect to frontend success page
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
+    } catch (error) {
+      console.error('Instagram callback error:', error);
+      
+      // Check if this is a mobile app callback
+      const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || 
+        `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
+      const isDeepLink = redirectUri && 
+        !redirectUri.startsWith('http://') && 
+        !redirectUri.startsWith('https://') &&
+        redirectUri.includes('://');
+
+      if (isDeepLink) {
+        // For mobile apps, return JSON error response
+        return res.status(StatusCodes.BAD_REQUEST).json({
+          success: false,
+          error: error.message || 'Failed to connect Instagram account',
+          deepLink: redirectUri.includes('?') 
+            ? `${redirectUri}&error=${encodeURIComponent(error.message || 'Failed to connect')}`
+            : `${redirectUri}?error=${encodeURIComponent(error.message || 'Failed to connect')}`
+        });
+      }
+
+      // For web apps, redirect to error page
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const errorMessage = error.message || 'Failed to connect Instagram account';
+      res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(errorMessage)}`);
     }
   }
 }
