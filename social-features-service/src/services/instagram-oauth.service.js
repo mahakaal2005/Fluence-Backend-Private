@@ -359,5 +359,214 @@ export class InstagramOAuthService {
       );
     }
   }
+
+  /**
+   * Get Instagram user media/posts
+   * Uses Instagram Graph API with Business Login
+   * @param {string} accessToken - Access token
+   * @param {Object} options - Optional parameters (limit, after cursor for pagination)
+   * @returns {Promise<Object>} Instagram media/posts with pagination
+   */
+  static async getInstagramMedia(accessToken, options = {}) {
+    try {
+      const { limit = 25, after = null } = options;
+      
+      // Instagram Graph API - Get user media using 'me/media' endpoint
+      const params = {
+        access_token: accessToken,
+        fields: 'id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count,thumbnail_url',
+        limit: limit
+      };
+
+      if (after) {
+        params.after = after;
+      }
+
+      const response = await axios.get('https://graph.instagram.com/me/media', { params });
+
+      // Transform Instagram media to a more usable format
+      const media = (response.data.data || []).map(item => ({
+        id: item.id,
+        caption: item.caption || '',
+        mediaType: item.media_type || 'IMAGE', // IMAGE, VIDEO, CAROUSEL_ALBUM
+        mediaUrl: item.media_url || null,
+        thumbnailUrl: item.thumbnail_url || null,
+        permalink: item.permalink || null,
+        timestamp: item.timestamp || null,
+        likeCount: item.like_count || 0,
+        commentsCount: item.comments_count || 0
+      }));
+
+      return {
+        data: media,
+        paging: response.data.paging || null,
+        summary: {
+          total: media.length,
+          hasMore: !!response.data.paging?.next
+        }
+      };
+    } catch (error) {
+      console.error('Error getting Instagram media:', error.response?.data || error.message);
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        error.response?.data?.error?.message || 'Failed to get Instagram media'
+      );
+    }
+  }
+
+  /**
+   * Get all Instagram user media/posts with pagination
+   * Fetches all pages of media
+   * @param {string} accessToken - Access token
+   * @param {number} maxPosts - Maximum number of posts to fetch (default: 100)
+   * @returns {Promise<Array>} Array of all Instagram media/posts
+   */
+  static async getAllInstagramMedia(accessToken, maxPosts = 100) {
+    try {
+      const allMedia = [];
+      let after = null;
+      let hasMore = true;
+      const limit = 25; // Instagram API max per page
+
+      while (hasMore && allMedia.length < maxPosts) {
+        const result = await this.getInstagramMedia(accessToken, {
+          limit: Math.min(limit, maxPosts - allMedia.length),
+          after: after
+        });
+
+        allMedia.push(...result.data);
+
+        if (result.paging && result.paging.next && allMedia.length < maxPosts) {
+          // Extract cursor from next URL
+          const nextUrl = new URL(result.paging.next);
+          after = nextUrl.searchParams.get('after');
+          hasMore = true;
+        } else {
+          hasMore = false;
+        }
+
+        // Add a small delay to avoid rate limiting
+        if (hasMore) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      return allMedia.slice(0, maxPosts);
+    } catch (error) {
+      console.error('Error getting all Instagram media:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync Instagram posts to database
+   * Fetches posts from Instagram and saves/updates them in the database
+   * @param {string} userId - User ID
+   * @param {string} socialAccountId - Social account ID
+   * @param {string} accessToken - Instagram access token
+   * @param {number} maxPosts - Maximum number of posts to sync (default: 100)
+   * @returns {Promise<Object>} Sync result with counts
+   */
+  static async syncInstagramPosts(userId, socialAccountId, accessToken, maxPosts = 100) {
+    try {
+      const pool = getPool();
+      
+      // Fetch all media from Instagram
+      const media = await this.getAllInstagramMedia(accessToken, maxPosts);
+      
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const item of media) {
+        // Determine post type based on media type
+        let postType = 'image';
+        if (item.mediaType === 'VIDEO') {
+          postType = 'video';
+        } else if (item.mediaType === 'CAROUSEL_ALBUM') {
+          postType = 'image'; // Carousel albums are treated as images
+        }
+
+        // Prepare media URLs array
+        const mediaUrls = [];
+        if (item.mediaUrl) {
+          mediaUrls.push(item.mediaUrl);
+        }
+        if (item.thumbnailUrl && item.thumbnailUrl !== item.mediaUrl) {
+          mediaUrls.push(item.thumbnailUrl);
+        }
+
+        // Parse timestamp
+        const publishedAt = item.timestamp ? new Date(item.timestamp) : new Date();
+
+        // Check if post already exists
+        const existingPost = await pool.query(
+          'SELECT id FROM social_posts WHERE social_account_id = $1 AND platform_post_id = $2',
+          [socialAccountId, item.id]
+        );
+
+        if (existingPost.rows.length > 0) {
+          // Update existing post
+          await pool.query(
+            `UPDATE social_posts 
+             SET content = $1, media_urls = $2, post_type = $3,
+                 likes_count = $4, comments_count = $5,
+                 published_at = $6, updated_at = NOW()
+             WHERE id = $7`,
+            [
+              item.caption,
+              mediaUrls,
+              postType,
+              item.likeCount,
+              item.commentsCount,
+              publishedAt,
+              existingPost.rows[0].id
+            ]
+          );
+          updated++;
+        } else {
+          // Create new post
+          await pool.query(
+            `INSERT INTO social_posts (
+              user_id, social_account_id, platform_post_id, content, media_urls,
+              post_type, status, published_at, likes_count, comments_count
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [
+              userId,
+              socialAccountId,
+              item.id,
+              item.caption,
+              mediaUrls,
+              postType,
+              'published', // Posts from Instagram are already published
+              publishedAt,
+              item.likeCount,
+              item.commentsCount
+            ]
+          );
+          created++;
+        }
+      }
+
+      // Update last_sync_at for the social account
+      await pool.query(
+        'UPDATE social_accounts SET last_sync_at = NOW() WHERE id = $1',
+        [socialAccountId]
+      );
+
+      return {
+        total: media.length,
+        created,
+        updated,
+        skipped
+      };
+    } catch (error) {
+      console.error('Error syncing Instagram posts:', error);
+      throw new ApiError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        error.message || 'Failed to sync Instagram posts'
+      );
+    }
+  }
 }
 

@@ -951,4 +951,180 @@ export class SocialController {
       res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(errorMessage)}`);
     }
   }
+
+  /**
+   * Fetch Instagram posts from API (without syncing to database)
+   * GET /api/social/instagram/posts?accountId=xxx&limit=25&sync=false
+   */
+  static async fetchInstagramPosts(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { accountId, limit = 25, sync = 'false' } = req.query;
+      const pool = getPool();
+
+      if (!accountId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Account ID is required');
+      }
+
+      // Get social account and verify it belongs to the user
+      const accountResult = await pool.query(
+        `SELECT sa.*, sp.name as platform_name 
+         FROM social_accounts sa
+         JOIN social_platforms sp ON sa.platform_id = sp.id
+         WHERE sa.id = $1 AND sa.user_id = $2 AND sa.is_connected = true`,
+        [accountId, userId]
+      );
+
+      if (accountResult.rows.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Social account not found or not connected');
+      }
+
+      const account = accountResult.rows[0];
+
+      if (account.platform_name !== 'instagram') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'This endpoint is only for Instagram accounts');
+      }
+
+      if (!account.access_token) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Access token not found for this account');
+      }
+
+      // Check if token is expired and refresh if needed
+      let accessToken = account.access_token;
+      if (account.token_expires_at && new Date(account.token_expires_at) < new Date()) {
+        try {
+          const refreshedToken = await InstagramOAuthService.refreshToken(accessToken);
+          accessToken = refreshedToken.accessToken;
+          
+          // Update token in database
+          await pool.query(
+            'UPDATE social_accounts SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3',
+            [
+              refreshedToken.accessToken,
+              new Date(Date.now() + refreshedToken.expiresIn * 1000),
+              accountId
+            ]
+          );
+        } catch (refreshError) {
+          console.error('Failed to refresh token:', refreshError);
+          // Continue with existing token, might still work
+        }
+      }
+
+      // Fetch posts from Instagram
+      const result = await InstagramOAuthService.getInstagramMedia(accessToken, {
+        limit: parseInt(limit)
+      });
+
+      // If sync is true, also sync to database
+      if (sync === 'true') {
+        const syncResult = await InstagramOAuthService.syncInstagramPosts(
+          userId,
+          accountId,
+          accessToken,
+          parseInt(limit)
+        );
+
+        return res.status(StatusCodes.OK).json({
+          success: true,
+          data: {
+            posts: result.data,
+            pagination: result.paging,
+            summary: result.summary,
+            sync: syncResult
+          },
+          message: 'Instagram posts fetched and synced successfully'
+        });
+      }
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          posts: result.data,
+          pagination: result.paging,
+          summary: result.summary
+        },
+        message: 'Instagram posts fetched successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Sync Instagram posts to database
+   * POST /api/social/instagram/sync-posts
+   */
+  static async syncInstagramPosts(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { accountId, maxPosts = 100 } = req.body;
+      const pool = getPool();
+
+      if (!accountId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Account ID is required');
+      }
+
+      // Get social account and verify it belongs to the user
+      const accountResult = await pool.query(
+        `SELECT sa.*, sp.name as platform_name 
+         FROM social_accounts sa
+         JOIN social_platforms sp ON sa.platform_id = sp.id
+         WHERE sa.id = $1 AND sa.user_id = $2 AND sa.is_connected = true`,
+        [accountId, userId]
+      );
+
+      if (accountResult.rows.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Social account not found or not connected');
+      }
+
+      const account = accountResult.rows[0];
+
+      if (account.platform_name !== 'instagram') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'This endpoint is only for Instagram accounts');
+      }
+
+      if (!account.access_token) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Access token not found for this account');
+      }
+
+      // Check if token is expired and refresh if needed
+      let accessToken = account.access_token;
+      if (account.token_expires_at && new Date(account.token_expires_at) < new Date()) {
+        try {
+          const refreshedToken = await InstagramOAuthService.refreshToken(accessToken);
+          accessToken = refreshedToken.accessToken;
+          
+          // Update token in database
+          await pool.query(
+            'UPDATE social_accounts SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3',
+            [
+              refreshedToken.accessToken,
+              new Date(Date.now() + refreshedToken.expiresIn * 1000),
+              accountId
+            ]
+          );
+        } catch (refreshError) {
+          console.error('Failed to refresh token:', refreshError);
+          // Continue with existing token, might still work
+        }
+      }
+
+      // Sync posts to database
+      const syncResult = await InstagramOAuthService.syncInstagramPosts(
+        userId,
+        accountId,
+        accessToken,
+        parseInt(maxPosts)
+      );
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: syncResult,
+        message: 'Instagram posts synced successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

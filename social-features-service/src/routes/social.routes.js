@@ -16,6 +16,8 @@ router.use(verifyAuthToken());
 
 // Instagram OAuth endpoints
 router.post('/instagram/authorize', SocialController.initiateInstagramOAuth);
+router.get('/instagram/posts', SocialController.fetchInstagramPosts);
+router.post('/instagram/sync-posts', SocialController.syncInstagramPosts);
 
 // Social account management
 router.post('/accounts/connect', SocialController.connectSocialAccount);
