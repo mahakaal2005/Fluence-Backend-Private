@@ -819,33 +819,170 @@ export class SocialController {
    * Note: For better security, consider handling this on the frontend and sending the code to a protected endpoint
    */
   static async handleInstagramCallback(req, res, next) {
+    // Helper function to get frontend URL
+    const getFrontendUrl = () => {
+      if (process.env.FRONTEND_URL) {
+        return process.env.FRONTEND_URL;
+      }
+      // If we're behind a tunnel, use the tunnel URL
+      const host = req.get('host');
+      if (host && (host.includes('trycloudflare.com') || host.includes('cfargotunnel.com'))) {
+        return `${req.protocol}://${host}`;
+      }
+      // Default to localhost for local development
+      return 'http://localhost:3000';
+    };
+
+    // Helper function to generate error HTML
+    const getErrorHtml = (errorMessage) => {
+      const frontendUrl = getFrontendUrl();
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Connection Error</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .error-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease-out 0.2s both;
+        }
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+        .error-icon::after {
+            content: '✕';
+            color: white;
+            font-size: 48px;
+            font-weight: bold;
+        }
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .error-message {
+            background: #fff5f5;
+            border-left: 4px solid #f5576c;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            color: #c53030;
+            font-size: 14px;
+            text-align: left;
+        }
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+            margin-top: 10px;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(245, 87, 108, 0.5);
+        }
+        .button:active {
+            transform: translateY(0);
+        }
+        .info {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-icon"></div>
+        <h1>Connection Failed</h1>
+        <p>
+            We couldn't connect your Instagram account. Please try again.
+        </p>
+        <div class="error-message">
+            ${errorMessage}
+        </div>
+        <div class="info">
+            You can close this window and try again from the app.
+        </div>
+    </div>
+</body>
+</html>`;
+    };
+
     try {
       const { code, state, error, error_reason, error_description } = req.query;
 
-      // Helper function to get frontend URL
-      const getFrontendUrl = () => {
-        if (process.env.FRONTEND_URL) {
-          return process.env.FRONTEND_URL;
-        }
-        // If we're behind a tunnel, use the tunnel URL
-        const host = req.get('host');
-        if (host && (host.includes('trycloudflare.com') || host.includes('cfargotunnel.com'))) {
-          return `${req.protocol}://${host}`;
-        }
-        // Default to localhost for local development
-        return 'http://localhost:3000';
-      };
-
       // Check for OAuth errors
       if (error) {
-        // Redirect to frontend error page or return error
-        const frontendUrl = getFrontendUrl();
-        return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(error_description || error_reason || 'Authorization failed')}`);
+        const errorMessage = error_description || error_reason || 'Authorization failed';
+        return res.status(StatusCodes.BAD_REQUEST).send(getErrorHtml(errorMessage));
       }
 
       if (!code) {
-        const frontendUrl = getFrontendUrl();
-        return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent('Authorization code is required')}`);
+        return res.status(StatusCodes.BAD_REQUEST).send(getErrorHtml('Authorization code is required'));
       }
 
       // Extract userId from state parameter
@@ -865,8 +1002,7 @@ export class SocialController {
       }
 
       if (!userId) {
-        const frontendUrl = getFrontendUrl();
-        return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent('User authentication required')}`);
+        return res.status(StatusCodes.BAD_REQUEST).send(getErrorHtml('User authentication required'));
       }
 
       // Get redirect URI (should match the one used in initiateInstagramOAuth)
@@ -905,24 +1041,136 @@ export class SocialController {
         });
       }
 
-      // For web apps, redirect to frontend success page
-      // Use FRONTEND_URL if set, otherwise try to construct from tunnel URL or use localhost
-      let frontendUrl = process.env.FRONTEND_URL;
+      // For web apps, show a nice HTML success page
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const username = connectedAccount.username || 'your account';
       
-      if (!frontendUrl) {
-        // If we're behind a tunnel, try to construct frontend URL from the request
-        const host = req.get('host');
-        if (host && (host.includes('trycloudflare.com') || host.includes('cfargotunnel.com'))) {
-          // We're behind a tunnel - frontend might be on the same tunnel or separate
-          // For now, redirect to the same tunnel URL (you can set FRONTEND_URL for separate frontend)
-          frontendUrl = `${req.protocol}://${host}`;
-        } else {
-          // Default to localhost for local development
-          frontendUrl = 'http://localhost:3000';
+      const successHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Connected Successfully</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-      }
-      
-      res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease-out 0.2s both;
+        }
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+        .success-icon::after {
+            content: '✓';
+            color: white;
+            font-size: 48px;
+            font-weight: bold;
+        }
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        .username {
+            color: #667eea;
+            font-weight: 600;
+        }
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+        .button:active {
+            transform: translateY(0);
+        }
+        .info {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon"></div>
+        <h1>Instagram Connected Successfully!</h1>
+        <p>
+            Your Instagram account <span class="username">@${username}</span> has been successfully connected to your account.
+        </p>
+        <div class="info">
+            You can close this window and return to the app.
+        </div>
+    </div>
+</body>
+</html>`;
+
+      return res.status(StatusCodes.OK).send(successHtml);
     } catch (error) {
       console.error('Instagram callback error:', error);
       
@@ -945,10 +1193,9 @@ export class SocialController {
         });
       }
 
-      // For web apps, redirect to error page
-      const frontendUrl = getFrontendUrl();
+      // For web apps, show a nice HTML error page
       const errorMessage = error.message || 'Failed to connect Instagram account';
-      res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(errorMessage)}`);
+      return res.status(StatusCodes.BAD_REQUEST).send(getErrorHtml(errorMessage));
     }
   }
 
