@@ -26,9 +26,15 @@ CREATE TABLE IF NOT EXISTS social_accounts (
   user_id UUID NOT NULL, -- References auth service users
   platform_id UUID NOT NULL REFERENCES social_platforms(id),
   platform_user_id VARCHAR(255) NOT NULL,
+  instagram_user_id VARCHAR(255), -- Instagram professional account ID (IG_ID)
   username VARCHAR(255),
   display_name VARCHAR(255),
+  name VARCHAR(255), -- User's full name
+  account_type VARCHAR(50), -- Account type (Business, Media_Creator, etc.)
   profile_picture_url TEXT,
+  followers_count INTEGER DEFAULT 0,
+  follows_count INTEGER DEFAULT 0,
+  media_count INTEGER DEFAULT 0,
   access_token TEXT,
   refresh_token TEXT,
   token_expires_at TIMESTAMPTZ,
@@ -156,6 +162,7 @@ CREATE INDEX IF NOT EXISTS idx_social_accounts_user_id ON social_accounts (user_
 CREATE INDEX IF NOT EXISTS idx_social_accounts_platform_id ON social_accounts (platform_id);
 CREATE INDEX IF NOT EXISTS idx_social_accounts_connected ON social_accounts (is_connected);
 CREATE INDEX IF NOT EXISTS idx_social_accounts_platform_user_id ON social_accounts (platform_user_id);
+CREATE INDEX IF NOT EXISTS idx_social_accounts_instagram_user_id ON social_accounts (instagram_user_id);
 
 CREATE INDEX IF NOT EXISTS idx_social_posts_user_id ON social_posts (user_id);
 CREATE INDEX IF NOT EXISTS idx_social_posts_social_account_id ON social_posts (social_account_id);

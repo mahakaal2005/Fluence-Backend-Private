@@ -5,7 +5,11 @@ import { SocialController } from '../controllers/social.controller.js';
 const router = Router();
 
 // Instagram OAuth callback (public - called by Instagram)
-router.get('/instagram/callback', SocialController.handleInstagramCallback);
+// This route must be defined BEFORE verifyAuthToken() middleware
+router.get('/instagram/callback', (req, res, next) => {
+  console.log('Instagram callback route hit:', req.method, req.path, req.query);
+  SocialController.handleInstagramCallback(req, res, next);
+});
 
 // Social account routes (require authentication)
 router.use(verifyAuthToken());

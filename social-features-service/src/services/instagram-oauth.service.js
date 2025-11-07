@@ -20,16 +20,38 @@ export class InstagramOAuthService {
   }
 
   /**
+   * Normalize redirect URI to ensure consistency
+   * Removes query parameters and fragments (not allowed in redirect URI configuration)
+   * Preserves path structure including trailing slashes as they must match dashboard config
+   * @param {string} redirectUri - The redirect URI to normalize
+   * @returns {string} Normalized redirect URI
+   */
+  static normalizeRedirectUri(redirectUri) {
+    if (!redirectUri) {
+      return redirectUri;
+    }
+    
+    try {
+      const url = new URL(redirectUri);
+      // Preserve pathname as-is (including trailing slashes) - must match dashboard exactly
+      // Only remove query and hash (they're not allowed in redirect URI configuration)
+      url.search = '';
+      url.hash = '';
+      return url.toString();
+    } catch (error) {
+      // If URL parsing fails, return as-is
+      return redirectUri;
+    }
+  }
+
+  /**
    * Generate Instagram OAuth authorization URL
-   * Supports two methods:
-   * 1. Instagram Graph API with Business Login (default) - Direct Instagram login, NO Facebook required
-   * 2. Instagram Graph API with Facebook Login - Requires Facebook Page connection
+   * Uses Instagram Graph API with Business Login - Direct Instagram login, NO Facebook required
    * @param {string} redirectUri - The redirect URI after authorization
    * @param {string} state - Optional state parameter for security
-   * @param {boolean} useFacebookLogin - Use Facebook Login (default: false - uses Instagram Business Login)
    * @returns {string} OAuth authorization URL
    */
-  static generateAuthUrl(redirectUri, state = null, useFacebookLogin = false) {
+  static generateAuthUrl(redirectUri, state = null) {
     const config = getConfig();
     const { appId, appSecret } = config.platforms.instagram;
 
@@ -40,46 +62,33 @@ export class InstagramOAuthService {
       );
     }
 
-    if (useFacebookLogin) {
-      // Instagram Graph API with Facebook Login - Requires Facebook Page connection
-      const baseUrl = 'https://www.facebook.com/v18.0/dialog/oauth';
-      
-      const params = new URLSearchParams({
-        client_id: appId,
-        redirect_uri: redirectUri,
-        scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement',
-        response_type: 'code',
-        ...(state && { state })
-      });
+    // Normalize redirect URI to ensure consistency
+    const normalizedRedirectUri = this.normalizeRedirectUri(redirectUri);
 
-      return `${baseUrl}?${params.toString()}`;
-    } else {
-      // Instagram Graph API with Business Login for Instagram (DEFAULT)
-      // Users log in with Instagram credentials directly - NO Facebook required
-      // Note: OAuth authorization uses api.instagram.com, API calls use graph.instagram.com
-      const baseUrl = 'https://api.instagram.com/oauth/authorize';
-      
-      const params = new URLSearchParams({
-        client_id: appId,
-        redirect_uri: redirectUri,
-        scope: 'instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights',
-        response_type: 'code',
-        ...(state && { state })
-      });
+    // Instagram Graph API with Business Login
+    // OAuth authorization uses www.instagram.com, API calls use graph.instagram.com
+    // Using new scope values (instagram_business_*) as per Instagram Business Login documentation
+    const baseUrl = 'https://www.instagram.com/oauth/authorize';
+    
+    const params = new URLSearchParams({
+      client_id: appId,
+      redirect_uri: normalizedRedirectUri,
+      scope: 'instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages',
+      response_type: 'code',
+      ...(state && { state })
+    });
 
-      return `${baseUrl}?${params.toString()}`;
-    }
+    return `${baseUrl}?${params.toString()}`;
   }
 
   /**
    * Exchange authorization code for access token
-   * Supports Instagram Graph API with Business Login (default) and Facebook Login
+   * Uses Instagram Graph API with Business Login
    * @param {string} code - Authorization code from Instagram
    * @param {string} redirectUri - The redirect URI used in authorization
-   * @param {boolean} useFacebookLogin - Use Facebook Login (default: false - uses Instagram Business Login)
    * @returns {Promise<Object>} Token response with access_token, token_type, expires_in
    */
-  static async exchangeCodeForToken(code, redirectUri, useFacebookLogin = false) {
+  static async exchangeCodeForToken(code, redirectUri) {
     const config = getConfig();
     const { appId, appSecret } = config.platforms.instagram;
 
@@ -91,56 +100,48 @@ export class InstagramOAuthService {
     }
 
     try {
-      if (useFacebookLogin) {
-        // Instagram Graph API with Facebook Login - Facebook token exchange
-        const tokenUrl = 'https://graph.facebook.com/v18.0/oauth/access_token';
-        const tokenResponse = await axios.post(tokenUrl, null, {
-          params: {
-            client_id: appId,
-            client_secret: appSecret,
-            redirect_uri: redirectUri,
-            code: code
-          }
-        });
-
-        const { access_token, token_type, expires_in } = tokenResponse.data;
-
-        if (!access_token) {
-          throw new ApiError(StatusCodes.BAD_REQUEST, 'Failed to obtain access token');
+      // Instagram Graph API with Business Login - Direct Instagram token exchange
+      // Note: Initial token exchange uses api.instagram.com, then exchange for long-lived at graph.instagram.com
+      // Using form data (application/x-www-form-urlencoded) as per Instagram API documentation
+      const tokenUrl = 'https://api.instagram.com/oauth/access_token';
+      const formData = new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+        code: code
+      });
+      
+      const tokenResponse = await axios.post(tokenUrl, formData.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
         }
+      });
 
-        return {
-          accessToken: access_token,
-          tokenType: token_type || 'bearer',
-          expiresIn: expires_in || 3600
-        };
+      // Response format: { "data": [{ "access_token": "...", "user_id": "...", "permissions": "..." }] }
+      const responseData = tokenResponse.data;
+      let access_token, user_id;
+      
+      if (responseData.data && Array.isArray(responseData.data) && responseData.data.length > 0) {
+        // New format with data array
+        access_token = responseData.data[0].access_token;
+        user_id = responseData.data[0].user_id;
       } else {
-        // Instagram Graph API with Business Login - Direct Instagram token exchange
-        // Note: Initial token exchange uses api.instagram.com, then exchange for long-lived at graph.instagram.com
-        const tokenUrl = 'https://api.instagram.com/oauth/access_token';
-        const tokenResponse = await axios.post(tokenUrl, null, {
-          params: {
-            client_id: appId,
-            client_secret: appSecret,
-            grant_type: 'authorization_code',
-            redirect_uri: redirectUri,
-            code: code
-          }
-        });
-
-        const { access_token, user_id } = tokenResponse.data;
-
-        if (!access_token) {
-          throw new ApiError(StatusCodes.BAD_REQUEST, 'Failed to obtain access token');
-        }
-
-        return {
-          accessToken: access_token,
-          userId: user_id,
-          tokenType: 'bearer',
-          expiresIn: 3600 // Short-lived token, will be exchanged for long-lived
-        };
+        // Fallback to direct format (for backward compatibility)
+        access_token = responseData.access_token;
+        user_id = responseData.user_id;
       }
+
+      if (!access_token) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Failed to obtain access token');
+      }
+
+      return {
+        accessToken: access_token,
+        userId: user_id,
+        tokenType: 'bearer',
+        expiresIn: 3600 // Short-lived token, will be exchanged for long-lived
+      };
     } catch (error) {
       console.error('Error exchanging code for token:', error.response?.data || error.message);
       throw new ApiError(
@@ -152,51 +153,31 @@ export class InstagramOAuthService {
 
   /**
    * Exchange short-lived token for long-lived token
-   * Supports Instagram Graph API with Business Login (default) and Facebook Login
+   * Uses Instagram Graph API with Business Login
    * @param {string} shortLivedToken - Short-lived access token
-   * @param {boolean} useFacebookLogin - Use Facebook Login (default: false - uses Instagram Business Login)
    * @returns {Promise<Object>} Long-lived token with expires_in
    */
-  static async getLongLivedToken(shortLivedToken, useFacebookLogin = false) {
+  static async getLongLivedToken(shortLivedToken) {
     const config = getConfig();
     const { appId, appSecret } = config.platforms.instagram;
 
     try {
-      if (useFacebookLogin) {
-        // Instagram Graph API with Facebook Login - Facebook token exchange
-        const tokenUrl = 'https://graph.facebook.com/v18.0/oauth/access_token';
-        const response = await axios.get(tokenUrl, {
-          params: {
-            grant_type: 'fb_exchange_token',
-            client_id: appId,
-            client_secret: appSecret,
-            fb_exchange_token: shortLivedToken
-          }
-        });
+      // Instagram Graph API with Business Login - Exchange for long-lived token (60 days)
+      const tokenUrl = 'https://graph.instagram.com/access_token';
+      const response = await axios.get(tokenUrl, {
+        params: {
+          grant_type: 'ig_exchange_token',
+          client_secret: appSecret,
+          access_token: shortLivedToken
+        }
+      });
 
-        const { access_token, expires_in } = response.data;
-        return {
-          accessToken: access_token,
-          expiresIn: expires_in || 5184000 // 60 days default
-        };
-      } else {
-        // Instagram Graph API with Business Login - Exchange for long-lived token (60 days)
-        const tokenUrl = 'https://graph.instagram.com/access_token';
-        const response = await axios.get(tokenUrl, {
-          params: {
-            grant_type: 'ig_exchange_token',
-            client_secret: appSecret,
-            access_token: shortLivedToken
-          }
-        });
-
-        const { access_token, token_type, expires_in } = response.data;
-        return {
-          accessToken: access_token,
-          tokenType: token_type || 'bearer',
-          expiresIn: expires_in || 5184000 // 60 days default
-        };
-      }
+      const { access_token, token_type, expires_in } = response.data;
+      return {
+        accessToken: access_token,
+        tokenType: token_type || 'bearer',
+        expiresIn: expires_in || 5184000 // 60 days default
+      };
     } catch (error) {
       console.error('Error getting long-lived token:', error.response?.data || error.message);
       // If long-lived token exchange fails, return the short-lived token
@@ -208,92 +189,38 @@ export class InstagramOAuthService {
   }
 
   /**
-   * Get Instagram user's pages (required to get Instagram Business Account)
-   * @param {string} accessToken - Facebook access token
-   * @returns {Promise<Array>} List of pages
-   */
-  static async getUserPages(accessToken) {
-    try {
-      const response = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
-        params: {
-          access_token: accessToken,
-          fields: 'id,name,access_token,instagram_business_account'
-        }
-      });
-
-      return response.data.data || [];
-    } catch (error) {
-      console.error('Error getting user pages:', error.response?.data || error.message);
-      throw new ApiError(
-        StatusCodes.BAD_REQUEST,
-        error.response?.data?.error?.message || 'Failed to get user pages'
-      );
-    }
-  }
-
-  /**
-   * Get Instagram Business Account ID from a page
-   * @param {string} pageId - Facebook Page ID
-   * @param {string} pageAccessToken - Page access token
-   * @returns {Promise<string|null>} Instagram Business Account ID
-   */
-  static async getInstagramBusinessAccount(pageId, pageAccessToken) {
-    try {
-      const response = await axios.get(`https://graph.facebook.com/v18.0/${pageId}`, {
-        params: {
-          access_token: pageAccessToken,
-          fields: 'instagram_business_account'
-        }
-      });
-
-      return response.data.instagram_business_account?.id || null;
-    } catch (error) {
-      console.error('Error getting Instagram Business Account:', error.response?.data || error.message);
-      return null;
-    }
-  }
-
-  /**
    * Get Instagram user profile
-   * Supports Instagram Graph API with Business Login (default) and Facebook Login
-   * @param {string} instagramAccountId - Instagram Account ID or 'me'
+   * Uses Instagram Graph API with Business Login
    * @param {string} accessToken - Access token
-   * @param {boolean} useFacebookLogin - Use Facebook Login (default: false - uses Instagram Business Login)
    * @returns {Promise<Object>} Instagram user profile
    */
-  static async getInstagramProfile(instagramAccountId, accessToken, useFacebookLogin = false) {
+  static async getInstagramProfile(accessToken) {
     try {
-      if (useFacebookLogin) {
-        // Instagram Graph API with Facebook Login - Get Business Account profile
-        const response = await axios.get(`https://graph.instagram.com/${instagramAccountId}`, {
-          params: {
-            access_token: accessToken,
-            fields: 'id,username,account_type,media_count'
-          }
-        });
+      // Instagram Graph API with Business Login - Get user profile using 'me'
+      // Fetch comprehensive profile data including all available fields
+      const response = await axios.get('https://graph.instagram.com/me', {
+        params: {
+          access_token: accessToken,
+          fields: 'id,user_id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count'
+        }
+      });
 
-        return {
-          id: response.data.id,
-          username: response.data.username,
-          accountType: response.data.account_type,
-          mediaCount: response.data.media_count || 0
-        };
-      } else {
-        // Instagram Graph API with Business Login - Get user profile using 'me'
-        const response = await axios.get('https://graph.instagram.com/me', {
-          params: {
-            access_token: accessToken,
-            fields: 'id,username,account_type,media_count'
-          }
-        });
+      // Handle response format - Instagram API may return data in array format or object format
+      const data = Array.isArray(response.data.data) && response.data.data.length > 0 
+        ? response.data.data[0] 
+        : response.data;
 
-        return {
-          id: response.data.id,
-          username: response.data.username,
-          accountType: response.data.account_type || 'BUSINESS',
-          mediaCount: response.data.media_count || 0
-        };
-      }
+      return {
+        id: data.id, // App-scoped ID
+        userId: data.user_id || data.id, // Instagram professional account ID (fallback to id if user_id not available)
+        username: data.username,
+        name: data.name || null,
+        accountType: data.account_type || 'BUSINESS',
+        profilePictureUrl: data.profile_picture_url || null,
+        followersCount: data.followers_count || 0,
+        followsCount: data.follows_count || 0,
+        mediaCount: data.media_count || 0
+      };
     } catch (error) {
       console.error('Error getting Instagram profile:', error.response?.data || error.message);
       throw new ApiError(
@@ -305,83 +232,56 @@ export class InstagramOAuthService {
 
   /**
    * Complete Instagram OAuth flow and connect account
-   * Supports Instagram Graph API with Business Login (default) and Facebook Login
+   * Uses Instagram Graph API with Business Login
    * @param {string} code - Authorization code
    * @param {string} redirectUri - Redirect URI
    * @param {string} userId - User ID
-   * @param {boolean} useFacebookLogin - Use Facebook Login (default: false - uses Instagram Business Login)
    * @returns {Promise<Object>} Connected social account
    */
-  static async connectInstagramAccount(code, redirectUri, userId, useFacebookLogin = false) {
+  static async connectInstagramAccount(code, redirectUri, userId) {
     try {
       // Step 1: Exchange code for short-lived token
-      const tokenData = await this.exchangeCodeForToken(code, redirectUri, useFacebookLogin);
+      const tokenData = await this.exchangeCodeForToken(code, redirectUri);
       const shortLivedToken = tokenData.accessToken;
-      const instagramUserId = tokenData.userId; // From Instagram Business Login
 
       // Step 2: Get long-lived token
-      const longLivedTokenData = await this.getLongLivedToken(shortLivedToken, useFacebookLogin);
+      const longLivedTokenData = await this.getLongLivedToken(shortLivedToken);
       const accessToken = longLivedTokenData.accessToken;
       const expiresIn = longLivedTokenData.expiresIn;
 
-      let instagramAccountId = null;
-      let username = null;
-      let displayName = null;
-      let finalAccessToken = accessToken; // Default to long-lived token
+      // Step 3: Get Instagram profile using 'me' endpoint
+      const profile = await this.getInstagramProfile(accessToken);
+      console.log('Instagram profile data retrieved:', {
+        id: profile.id,
+        userId: profile.userId,
+        username: profile.username,
+        name: profile.name,
+        accountType: profile.accountType,
+        profilePictureUrl: profile.profilePictureUrl,
+        followersCount: profile.followersCount,
+        followsCount: profile.followsCount,
+        mediaCount: profile.mediaCount
+      });
+      
+      // Extract profile data
+      const instagramAccountId = profile.id; // App-scoped ID (stored as platform_user_id)
+      const instagramUserId = profile.userId; // Instagram professional account ID
+      const username = profile.username;
+      const displayName = profile.name || profile.username; // Use name if available, otherwise username
+      const name = profile.name || null;
+      const accountType = profile.accountType || 'BUSINESS';
+      const profilePictureUrl = profile.profilePictureUrl || null;
+      const followersCount = profile.followersCount || 0;
+      const followsCount = profile.followsCount || 0;
+      const mediaCount = profile.mediaCount || 0;
 
-      if (useFacebookLogin) {
-        // Instagram Graph API - Requires Facebook Page connection
-        // Step 3: Get user's pages to find Instagram Business Account
-        const pages = await this.getUserPages(accessToken);
-        
-        if (pages.length === 0) {
-          throw new ApiError(
-            StatusCodes.BAD_REQUEST,
-            'No Facebook pages found. Please create a Facebook Page and connect it to an Instagram Business Account.'
-          );
-        }
-
-        // Find page with Instagram Business Account
-        let pageAccessToken = null;
-
-        for (const page of pages) {
-          if (page.instagram_business_account) {
-            instagramAccountId = page.instagram_business_account.id;
-            pageAccessToken = page.access_token;
-            displayName = page.name;
-            break;
-          }
-        }
-
-        if (!instagramAccountId) {
-          throw new ApiError(
-            StatusCodes.BAD_REQUEST,
-            'No Instagram Business Account found. Please connect your Instagram account to a Facebook Page.'
-          );
-        }
-
-        // Step 4: Get Instagram profile
-        const profile = await this.getInstagramProfile(instagramAccountId, pageAccessToken, true);
-        username = profile.username || username;
-        // Use page access token for Graph API
-        finalAccessToken = pageAccessToken;
-      } else {
-        // Instagram Graph API with Business Login - Direct Instagram authentication
-        // Step 3: Get Instagram profile using 'me' endpoint
-        const profile = await this.getInstagramProfile('me', accessToken, false);
-        instagramAccountId = profile.id;
-        username = profile.username;
-        displayName = profile.username;
-        finalAccessToken = accessToken; // Use the long-lived token
-      }
-
-      // Step 5: Get platform ID
+      // Step 4: Get platform ID
       const platformId = await this.getInstagramPlatformId();
 
-      // Step 6: Calculate token expiration
+      // Step 5: Calculate token expiration
       const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
 
-      // Step 7: Save or update social account
+      // Step 6: Save or update social account
       const pool = getPool();
       const existingAccount = await pool.query(
         'SELECT * FROM social_accounts WHERE user_id = $1 AND platform_id = $2',
@@ -389,26 +289,33 @@ export class InstagramOAuthService {
       );
 
       if (existingAccount.rows.length > 0) {
-        // Update existing account
+        // Update existing account with all profile fields
         const updatedAccount = await pool.query(
           `UPDATE social_accounts 
-           SET platform_user_id = $3, username = $4, display_name = $5, 
-               access_token = $6, token_expires_at = $7, 
+           SET platform_user_id = $3, instagram_user_id = $4, username = $5, display_name = $6, 
+               name = $7, account_type = $8, profile_picture_url = $9, 
+               followers_count = $10, follows_count = $11, media_count = $12,
+               access_token = $13, token_expires_at = $14, 
                is_connected = true, last_sync_at = NOW(), updated_at = NOW()
            WHERE user_id = $1 AND platform_id = $2 
            RETURNING *`,
-          [userId, platformId, instagramAccountId, username, displayName || username, finalAccessToken, tokenExpiresAt]
+          [userId, platformId, instagramAccountId, instagramUserId, username, displayName, name, 
+           accountType, profilePictureUrl, followersCount, followsCount, mediaCount, 
+           accessToken, tokenExpiresAt]
         );
 
         return updatedAccount.rows[0];
       } else {
-        // Create new account
+        // Create new account with all profile fields
         const newAccount = await pool.query(
           `INSERT INTO social_accounts (
-            user_id, platform_id, platform_user_id, username, display_name, 
+            user_id, platform_id, platform_user_id, instagram_user_id, username, display_name, 
+            name, account_type, profile_picture_url, followers_count, follows_count, media_count,
             access_token, token_expires_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [userId, platformId, instagramAccountId, username, displayName || username, finalAccessToken, tokenExpiresAt]
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+          [userId, platformId, instagramAccountId, instagramUserId, username, displayName, name,
+           accountType, profilePictureUrl, followersCount, followsCount, mediaCount,
+           accessToken, tokenExpiresAt]
         );
 
         return newAccount.rows[0];

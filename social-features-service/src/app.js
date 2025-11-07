@@ -31,11 +31,27 @@ app.use(helmet({
 // CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin (mobile apps, Postman, OAuth redirects, etc.)
     if (!origin) return callback(null, true);
 
     // Allow any localhost origin (for development)
     if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+
+    // Allow Instagram OAuth redirects (www.instagram.com, api.instagram.com)
+    if (origin.includes('instagram.com') || origin.includes('facebook.com')) {
+      return callback(null, true);
+    }
+
+    // Allow Cloudflare tunnel origins (for development)
+    if (origin.includes('trycloudflare.com') || origin.includes('cfargotunnel.com')) {
+      return callback(null, true);
+    }
+
+    // Allow configured frontend URL
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && origin.startsWith(frontendUrl)) {
       return callback(null, true);
     }
 

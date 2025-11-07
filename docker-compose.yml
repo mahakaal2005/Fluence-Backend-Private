@@ -283,6 +283,7 @@ services:
       - TWITTER_CLIENT_SECRET=your-twitter-client-secret
       - INSTAGRAM_APP_ID=your-instagram-app-id
       - INSTAGRAM_APP_SECRET=your-instagram-app-secret
+      - INSTAGRAM_REDIRECT_URI=https://your-tunnel-url.com/api/social/instagram/callback
       - LINKEDIN_CLIENT_ID=your-linkedin-client-id
       - LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
       - TIKTOK_CLIENT_KEY=your-tiktok-client-key

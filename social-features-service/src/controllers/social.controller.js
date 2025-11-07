@@ -715,35 +715,96 @@ export class SocialController {
   /**
    * Initiate Instagram OAuth flow
    * Returns the authorization URL for the user to visit
-   * Uses Instagram Graph API with Business Login by default (direct Instagram login, NO Facebook required)
+   * Uses Instagram Graph API with Business Login (direct Instagram login, NO Facebook required)
    */
   static async initiateInstagramOAuth(req, res, next) {
     try {
       const userId = req.user.id;
       const config = getConfig();
       
-      // Use Instagram Graph API with Business Login by default (direct Instagram login, NO Facebook)
-      // Set useFacebookLogin: true to use Facebook Login (requires Facebook Page)
-      const useFacebookLogin = req.body.useFacebookLogin === true;
-      
       // Generate redirect URI - should match what's configured in Meta Developer Console
+      // Priority: 1. Request body, 2. Environment variable, 3. Auto-detect (with localhost warning)
       const redirectUri = req.body.redirectUri || 
         process.env.INSTAGRAM_REDIRECT_URI || 
         `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
 
+      // Normalize redirect URI
+      const normalizedRedirectUri = InstagramOAuthService.normalizeRedirectUri(redirectUri);
+
+      // Check if using localhost (Meta doesn't allow localhost redirect URIs)
+      const isLocalhost = normalizedRedirectUri.includes('localhost') || normalizedRedirectUri.includes('127.0.0.1');
+      
       // Generate state parameter for security (optional but recommended)
       const state = Buffer.from(JSON.stringify({ userId, timestamp: Date.now() })).toString('base64');
 
-      // Generate OAuth URL
-      const authUrl = InstagramOAuthService.generateAuthUrl(redirectUri, state, useFacebookLogin);
+      // Generate OAuth URL using Instagram Graph API
+      const authUrl = InstagramOAuthService.generateAuthUrl(normalizedRedirectUri, state);
+
+      // Build instructions object
+      const instructions = {
+        note: 'If you get "Invalid redirect_uri" error, make sure this exact redirect URI is added in your Meta App Dashboard:',
+        dashboardPath: 'App Dashboard > Instagram > API setup with Instagram login > 3. Set up Instagram business login > Business login settings > OAuth redirect URIs',
+        redirectUri: normalizedRedirectUri
+      };
+
+      // Add localhost warning and solutions
+      if (isLocalhost) {
+        instructions.localhostWarning = {
+          message: '⚠️ Meta Developer Platform does NOT allow localhost redirect URIs!',
+          solutions: [
+            {
+              method: 'Cloudflare Tunnel (Recommended - Free & Persistent)',
+              steps: [
+                '1. Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/',
+                '2. Login: cloudflared tunnel login',
+                '3. Create tunnel: cloudflared tunnel create fluence-social',
+                '4. Configure: Add route in Cloudflare dashboard or use config file',
+                '5. Start tunnel: cloudflared tunnel run fluence-social',
+                '6. Get your persistent URL (e.g., https://fluence-social.your-domain.com)',
+                `7. Set INSTAGRAM_REDIRECT_URI=https://fluence-social.your-domain.com/api/social/instagram/callback`,
+                '8. Add the URL to Meta App Dashboard OAuth redirect URIs'
+              ],
+              persistent: true,
+              free: true
+            },
+            {
+              method: 'ngrok with Reserved Domain (Persistent)',
+              steps: [
+                '1. Sign up for ngrok: https://ngrok.com',
+                '2. Get authtoken: https://dashboard.ngrok.com/get-started/your-authtoken',
+                '3. Configure: ngrok config add-authtoken YOUR_TOKEN',
+                '4. Reserve domain: ngrok http 4007 --domain=your-reserved-domain.ngrok-free.app',
+                `5. Set INSTAGRAM_REDIRECT_URI=https://your-reserved-domain.ngrok-free.app/api/social/instagram/callback`,
+                '6. Add to Meta App Dashboard',
+                'Note: Reserved domains require ngrok paid plan'
+              ],
+              persistent: true,
+              free: false
+            },
+            {
+              method: 'Use Production/Staging URL',
+              steps: [
+                '1. Deploy your service to a staging/production environment',
+                '2. Use the public URL as redirect URI',
+                '3. Add to Meta App Dashboard'
+              ],
+              persistent: true,
+              free: false
+            }
+          ],
+          currentUri: normalizedRedirectUri
+        };
+      }
 
       res.status(StatusCodes.OK).json({
         success: true,
         data: {
           authUrl,
-          redirectUri,
+          redirectUri: normalizedRedirectUri,
           state,
-          method: useFacebookLogin ? 'Instagram Graph API (Facebook Login)' : 'Instagram Graph API (Business Login - Default, NO Facebook required)'
+          method: 'Instagram Graph API (Business Login)',
+          instructions,
+          ...(isLocalhost && { warning: 'Localhost detected - Meta does not allow localhost redirect URIs. See instructions for solutions.' })
         },
         message: 'Visit the authUrl to authorize Instagram access'
       });
@@ -761,15 +822,29 @@ export class SocialController {
     try {
       const { code, state, error, error_reason, error_description } = req.query;
 
+      // Helper function to get frontend URL
+      const getFrontendUrl = () => {
+        if (process.env.FRONTEND_URL) {
+          return process.env.FRONTEND_URL;
+        }
+        // If we're behind a tunnel, use the tunnel URL
+        const host = req.get('host');
+        if (host && (host.includes('trycloudflare.com') || host.includes('cfargotunnel.com'))) {
+          return `${req.protocol}://${host}`;
+        }
+        // Default to localhost for local development
+        return 'http://localhost:3000';
+      };
+
       // Check for OAuth errors
       if (error) {
         // Redirect to frontend error page or return error
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = getFrontendUrl();
         return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(error_description || error_reason || 'Authorization failed')}`);
       }
 
       if (!code) {
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = getFrontendUrl();
         return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent('Authorization code is required')}`);
       }
 
@@ -790,7 +865,7 @@ export class SocialController {
       }
 
       if (!userId) {
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = getFrontendUrl();
         return res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent('User authentication required')}`);
       }
 
@@ -799,17 +874,14 @@ export class SocialController {
       const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || 
         `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
 
-      // Determine which API to use based on state or default to Instagram Business Login
-      // Instagram Business Login = direct Instagram login, NO Facebook required (default)
-      // Facebook Login = requires Facebook Page connection
-      const useFacebookLogin = req.query.useFacebookLogin === 'true';
+      // Normalize redirect URI to match the one used in authorization
+      const normalizedRedirectUri = InstagramOAuthService.normalizeRedirectUri(redirectUri);
 
-      // Complete OAuth flow and connect account
+      // Complete OAuth flow and connect account using Instagram Graph API
       const connectedAccount = await InstagramOAuthService.connectInstagramAccount(
         code,
-        redirectUri,
-        userId,
-        useFacebookLogin
+        normalizedRedirectUri,
+        userId
       );
 
       // Check if this is a mobile app callback (deep link) or web callback
@@ -834,7 +906,22 @@ export class SocialController {
       }
 
       // For web apps, redirect to frontend success page
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      // Use FRONTEND_URL if set, otherwise try to construct from tunnel URL or use localhost
+      let frontendUrl = process.env.FRONTEND_URL;
+      
+      if (!frontendUrl) {
+        // If we're behind a tunnel, try to construct frontend URL from the request
+        const host = req.get('host');
+        if (host && (host.includes('trycloudflare.com') || host.includes('cfargotunnel.com'))) {
+          // We're behind a tunnel - frontend might be on the same tunnel or separate
+          // For now, redirect to the same tunnel URL (you can set FRONTEND_URL for separate frontend)
+          frontendUrl = `${req.protocol}://${host}`;
+        } else {
+          // Default to localhost for local development
+          frontendUrl = 'http://localhost:3000';
+        }
+      }
+      
       res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
     } catch (error) {
       console.error('Instagram callback error:', error);
@@ -859,7 +946,7 @@ export class SocialController {
       }
 
       // For web apps, redirect to error page
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const frontendUrl = getFrontendUrl();
       const errorMessage = error.message || 'Failed to connect Instagram account';
       res.redirect(`${frontendUrl}/social/instagram/error?error=${encodeURIComponent(errorMessage)}`);
     }

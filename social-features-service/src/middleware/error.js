@@ -8,10 +8,15 @@ export class ApiError extends Error {
   }
 }
 
-export function notFoundHandler(_req, res) {
+export function notFoundHandler(req, res) {
+  // Log the request for debugging
+  console.log('Route not found:', req.method, req.path, req.originalUrl);
   res.status(StatusCodes.NOT_FOUND).json({ 
     success: false,
-    error: 'Route not found' 
+    error: 'Route not found',
+    method: req.method,
+    path: req.path,
+    originalUrl: req.originalUrl
   });
 }
 
