@@ -1179,8 +1179,7 @@ export class SocialController {
         `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
       const isDeepLink = redirectUri && 
         !redirectUri.startsWith('http://') && 
-        !redirectUri.startsWith('https://') &&
-        redirectUri.includes('://');
+        redirectUri.startsWith('https://')
 
       if (isDeepLink) {
         // For mobile apps, return JSON error response
