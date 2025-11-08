@@ -816,6 +816,16 @@ export class InstagramOAuthService {
         const mentions = this.extractMentions(item.caption);
         console.log(`[SYNC] Post ${item.id}: Caption="${item.caption?.substring(0, 100)}...", Mentions=[${mentions.join(', ')}], Published: ${publishedAt.toISOString()}, Age: ${Math.round(postAge / (60 * 60 * 1000))} hours, Recent: ${isRecentPost}`);
 
+        // Only process posts that have @fluencepay tagged
+        const captionLower = (item.caption || '').toLowerCase();
+        const hasFluencePayTag = captionLower.includes('@fluencepay');
+        
+        if (!hasFluencePayTag) {
+          console.log(`[SYNC] Post ${item.id} skipped: No @fluencepay tag found`);
+          skipped++;
+          continue; // Skip this post
+        }
+
         // Check if post already exists
         const existingPost = await pool.query(
           'SELECT id, original_transaction_id FROM social_posts WHERE social_account_id = $1 AND platform_post_id = $2',
@@ -862,7 +872,7 @@ export class InstagramOAuthService {
 
           updated++;
         } else {
-          // Create new post
+          // Create new post with pending_review status
           const newPost = await pool.query(
             `INSERT INTO social_posts (
               user_id, social_account_id, platform_post_id, content, media_urls,
@@ -875,7 +885,7 @@ export class InstagramOAuthService {
               item.caption,
               mediaUrls,
               postType,
-              'published', // Posts from Instagram are already published
+              'pending_review', // New posts from Instagram need admin review
               publishedAt,
               item.likeCount,
               item.commentsCount

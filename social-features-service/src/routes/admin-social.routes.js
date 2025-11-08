@@ -12,6 +12,7 @@ router.use(verifyAuthToken());
 router.get('/activity/recent-verifications', getRecentVerifications);
 
 // Admin post management routes
+router.get('/posts', AdminSocialController.getAllPosts); // Get all posts with filtering
 router.get('/posts/pending', AdminSocialController.getPendingPosts);
 router.get('/posts/:postId', AdminSocialController.getPostForReview);
 router.post('/posts/:postId/approve', AdminSocialController.approvePost);
