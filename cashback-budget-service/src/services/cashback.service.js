@@ -22,6 +22,31 @@ export class CashbackService {
       throw new Error('Transaction already processed');
     }
 
+    // Verify user is approved and not suspended before processing cashback
+    const { getPool } = await import('../config/database.js');
+    const pool = getPool();
+    
+    const userResult = await pool.query(
+      'SELECT is_approved, status FROM users WHERE id = $1',
+      [customerId]
+    );
+
+    if (userResult.rows.length === 0) {
+      throw new Error('User not found');
+    }
+
+    const user = userResult.rows[0];
+    const isApproved = user.is_approved || false;
+    const userStatus = user.status || 'active';
+
+    if (!isApproved) {
+      throw new Error('User is not approved to receive cashback');
+    }
+
+    if (userStatus === 'suspended') {
+      throw new Error('User is suspended and cannot receive cashback');
+    }
+
     // Get merchant budget
     const budget = await BudgetModel.getBudgetByMerchantId(merchantId);
     if (!budget) {

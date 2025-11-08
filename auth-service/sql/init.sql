@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   date_of_birth DATE,
   role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','merchant','moderator')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','deleted','flagged')),
+  is_approved BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_provider ON users (auth_provider, provider_id);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);
+CREATE INDEX IF NOT EXISTS idx_users_is_approved ON users (is_approved);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);
 
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id);
