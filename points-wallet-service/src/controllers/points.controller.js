@@ -79,22 +79,8 @@ export class PointsController {
         );
       }
 
-      // Explicitly reflect pending points in wallet_balances (in addition to DB trigger)
-      try {
-        const pool = getPool();
-        await pool.query(
-          `INSERT INTO wallet_balances (user_id, pending_balance, last_updated_at, created_at, updated_at)
-           VALUES ($1, $2, NOW(), NOW(), NOW())
-           ON CONFLICT (user_id) DO UPDATE SET
-             pending_balance = wallet_balances.pending_balance + EXCLUDED.pending_balance,
-             last_updated_at = NOW(),
-             updated_at = NOW()`,
-          [userId, parseInt(amount, 10)]
-        );
-      } catch (balanceErr) {
-        // Do not fail earn if balance update fails; background reconciliation will pick it up
-        console.error('Failed to update pending_balance for user', userId, balanceErr);
-      }
+      // Note: Wallet balance is automatically updated by the database trigger (update_wallet_balance)
+      // No need to manually update here to avoid double counting
       
       res.status(StatusCodes.CREATED).json({
         success: true,

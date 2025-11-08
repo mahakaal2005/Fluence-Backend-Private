@@ -1257,14 +1257,16 @@ export class SocialController {
         }
       }
 
-      // Fetch posts from Instagram
-      const result = await InstagramOAuthService.getInstagramMedia(accessToken, {
-        limit: parseInt(limit)
-      });
-
-      // If sync is true, also sync to database
+      // If sync is true, fetch, sync, and return posts from database with status
       if (sync === 'true') {
         const authToken = req.headers.authorization || null;
+        
+        // First, fetch posts from Instagram to get the media IDs
+        const result = await InstagramOAuthService.getInstagramMedia(accessToken, {
+          limit: parseInt(limit)
+        });
+
+        // Sync posts to database (this will create/update posts and auto-link transactions)
         const syncResult = await InstagramOAuthService.syncInstagramPosts(
           userId,
           accountId,
@@ -1273,17 +1275,48 @@ export class SocialController {
           authToken
         );
 
+        // Get the synced posts from database with their status and transaction links
+        const platformPostIds = result.data.map(post => post.id);
+        const syncedPostsQuery = `
+          SELECT sp.*, 
+                 sa.platform_user_id, sa.username, sa.display_name,
+                 pl.name as platform_name, pl.display_name as platform_display_name
+          FROM social_posts sp
+          JOIN social_accounts sa ON sp.social_account_id = sa.id
+          JOIN social_platforms pl ON sa.platform_id = pl.id
+          WHERE sp.social_account_id = $1
+            AND sp.platform_post_id = ANY($2::text[])
+          ORDER BY sp.published_at DESC
+        `;
+        
+        const syncedPostsResult = await pool.query(syncedPostsQuery, [
+          accountId,
+          platformPostIds
+        ]);
+
         return res.status(StatusCodes.OK).json({
           success: true,
           data: {
-            posts: result.data,
-            pagination: result.paging,
-            summary: result.summary,
-            sync: syncResult
+            posts: syncedPostsResult.rows,
+            sync: {
+              total: syncResult.total,
+              created: syncResult.created,
+              updated: syncResult.updated,
+              autoLinked: syncResult.autoLinked
+            },
+            pagination: {
+              limit: parseInt(limit),
+              count: syncedPostsResult.rows.length
+            }
           },
-          message: 'Instagram posts fetched and synced successfully'
+          message: 'Instagram posts fetched, synced, and returned with status'
         });
       }
+
+      // If sync is false, just fetch from Instagram API (original behavior)
+      const result = await InstagramOAuthService.getInstagramMedia(accessToken, {
+        limit: parseInt(limit)
+      });
 
       res.status(StatusCodes.OK).json({
         success: true,

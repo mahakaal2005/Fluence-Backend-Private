@@ -212,10 +212,15 @@ RETURNS TRIGGER AS $$
 DECLARE
   current_balance INTEGER;
 BEGIN
-  -- Get current balance
+  -- Get current balance, default to 0 if wallet doesn't exist yet
   SELECT available_balance INTO current_balance 
   FROM wallet_balances 
   WHERE user_id = NEW.user_id;
+  
+  -- If no wallet exists (no row found), current_balance will be NULL, so default to 0
+  IF current_balance IS NULL THEN
+    current_balance := 0;
+  END IF;
   
   -- Log the audit entry
   INSERT INTO points_audit_log (

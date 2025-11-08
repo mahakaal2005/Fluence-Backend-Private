@@ -563,36 +563,70 @@ export class InstagramOAuthService {
       try {
         // First, try to find cashback transactions directly (if in same DB)
         // Look for transactions created in the last 24 hours for these merchants
+        console.log(`[AUTO-LINK] Searching cashback_transactions with:`);
+        console.log(`[AUTO-LINK]   - merchant_ids: ${merchantIds.join(', ')}`);
+        console.log(`[AUTO-LINK]   - status: pending`);
+        console.log(`[AUTO-LINK]   - time window: ${timeWindowStart.toISOString()} to ${now.toISOString()}`);
+        console.log(`[AUTO-LINK]   - Note: Filtering by merchant_id only (not customer_id)`);
+        
         const cashbackQuery = `
-          SELECT ct.id, ct.created_at, ct.merchant_id, ct.status
+          SELECT ct.id, ct.created_at, ct.merchant_id, ct.status, ct.customer_id
           FROM cashback_transactions ct
-          WHERE ct.customer_id = $1
-            AND ct.merchant_id = ANY($2::uuid[])
+          WHERE ct.merchant_id = ANY($1::uuid[])
             AND ct.status = 'pending'
-            AND ct.created_at >= $3
-            AND ct.created_at <= $4
+            AND ct.created_at >= $2
+            AND ct.created_at <= $3
           ORDER BY ct.created_at DESC
-          LIMIT 1
+          LIMIT 10
         `;
         
         const cashbackResult = await pool.query(cashbackQuery, [
-          userId,
           merchantIds,
           timeWindowStart, // 24 hours ago
           now // Current time
         ]);
 
+        console.log(`[AUTO-LINK] Cashback query returned ${cashbackResult.rows.length} transaction(s)`);
         if (cashbackResult.rows.length > 0) {
+          console.log(`[AUTO-LINK] Transaction details:`, cashbackResult.rows.map(r => ({
+            id: r.id,
+            merchant_id: r.merchant_id,
+            customer_id: r.customer_id,
+            status: r.status,
+            created_at: r.created_at
+          })));
           matchingTransactionId = cashbackResult.rows[0].id;
-          console.log(`[AUTO-LINK] Found cashback transaction: ${matchingTransactionId}`);
+          console.log(`[AUTO-LINK] ✅ Found cashback transaction: ${matchingTransactionId}`);
         } else {
-          console.log(`[AUTO-LINK] No cashback transactions found, trying points_transactions...`);
+          // Debug: Check if there are any transactions for this merchant without time/status filters
+          const debugQuery = `
+            SELECT COUNT(*) as count, 
+                   MIN(created_at) as earliest, 
+                   MAX(created_at) as latest,
+                   array_agg(DISTINCT status) as statuses,
+                   array_agg(DISTINCT customer_id) as customer_ids
+            FROM cashback_transactions
+            WHERE merchant_id = ANY($1::uuid[])
+          `;
+          const debugResult = await pool.query(debugQuery, [merchantIds]);
+          if (debugResult.rows[0].count > 0) {
+            console.log(`[AUTO-LINK] ⚠️ Found ${debugResult.rows[0].count} transaction(s) for merchant(s), but none match filters:`);
+            console.log(`[AUTO-LINK]   - Earliest: ${debugResult.rows[0].earliest}`);
+            console.log(`[AUTO-LINK]   - Latest: ${debugResult.rows[0].latest}`);
+            console.log(`[AUTO-LINK]   - Statuses: ${debugResult.rows[0].statuses.join(', ')}`);
+            console.log(`[AUTO-LINK]   - Customer IDs: ${debugResult.rows[0].customer_ids.slice(0, 5).join(', ')}${debugResult.rows[0].customer_ids.length > 5 ? '...' : ''}`);
+            console.log(`[AUTO-LINK]   - Time window needed: ${timeWindowStart.toISOString()} to ${now.toISOString()}`);
+          } else {
+            console.log(`[AUTO-LINK] ⚠️ No transactions found for merchant_ids=[${merchantIds.join(', ')}]`);
+          }
+          console.log(`[AUTO-LINK] No cashback transactions found matching all criteria, trying points_transactions...`);
           
           // If no cashback transaction found, try to find via points_transactions
           // Points transactions have reference_id that should match cashback transaction ID
           // We need to find points transactions for this user that need social posts (created in last 24 hours)
+          console.log(`[AUTO-LINK] Searching points_transactions for user ${userId}...`);
           const pointsQuery = `
-            SELECT pt.reference_id, pt.created_at
+            SELECT pt.reference_id, pt.created_at, pt.id as points_transaction_id
             FROM points_transactions pt
             WHERE pt.user_id = $1
               AND pt.social_post_required = true
@@ -610,24 +644,42 @@ export class InstagramOAuthService {
             now // Current time
           ]);
 
+          console.log(`[AUTO-LINK] Points query returned ${pointsResult.rows.length} transaction(s)`);
           if (pointsResult.rows.length > 0) {
+            console.log(`[AUTO-LINK] Points transactions found:`, pointsResult.rows.map(r => ({
+              points_id: r.points_transaction_id,
+              reference_id: r.reference_id,
+              created_at: r.created_at
+            })));
+            
             // For each reference_id, check if it's a cashback transaction for one of our merchants
             for (const ptRow of pointsResult.rows) {
               if (ptRow.reference_id) {
+                console.log(`[AUTO-LINK] Verifying reference_id ${ptRow.reference_id} against merchant_ids [${merchantIds.join(', ')}]`);
                 // Try to verify this is a cashback transaction for one of our merchants
                 const verifyQuery = `
-                  SELECT id FROM cashback_transactions
+                  SELECT id, merchant_id, customer_id, status, created_at 
+                  FROM cashback_transactions
                   WHERE id = $1 AND merchant_id = ANY($2::uuid[])
                 `;
                 const verifyResult = await pool.query(verifyQuery, [ptRow.reference_id, merchantIds]);
                 
                 if (verifyResult.rows.length > 0) {
+                  console.log(`[AUTO-LINK] ✅ Verified transaction ${ptRow.reference_id} belongs to merchant ${verifyResult.rows[0].merchant_id}`);
                   matchingTransactionId = ptRow.reference_id;
-                  console.log(`[AUTO-LINK] Found transaction via points_transactions: ${matchingTransactionId}`);
+                  console.log(`[AUTO-LINK] ✅ Found transaction via points_transactions: ${matchingTransactionId}`);
                   break;
+                } else {
+                  console.log(`[AUTO-LINK] ❌ Reference ${ptRow.reference_id} does not match any of the merchant_ids`);
                 }
               }
             }
+            
+            if (!matchingTransactionId) {
+              console.log(`[AUTO-LINK] ⚠️ Found ${pointsResult.rows.length} points transaction(s) but none matched the merchant_ids`);
+            }
+          } else {
+            console.log(`[AUTO-LINK] ⚠️ No points transactions found for user ${userId} in the last 24 hours`);
           }
         }
       } catch (dbError) {
@@ -874,4 +926,5 @@ export class InstagramOAuthService {
     }
   }
 }
+
 
