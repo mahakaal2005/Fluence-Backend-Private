@@ -247,6 +247,33 @@ export async function rejectUser(req, res, next) {
   }
 }
 
+export async function suspendUser(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const { suspensionReason } = req.body || {};
+
+    const user = await findUserById(userId);
+    if (!user) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    }
+
+    const updatedUser = await updateUserStatus(userId, 'suspended');
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: 'User suspended successfully',
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        status: updatedUser.status
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getUserApprovalStatus(req, res, next) {
   try {
     const { userId } = req.params;

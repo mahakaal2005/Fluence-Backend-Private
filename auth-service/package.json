@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "start:prod": "NODE_ENV=production node src/server.js",
     "migrate:init": "psql \"%PG_URI%\" -f sql/init.sql",
+    "fix:approval-status": "node scripts/fix-user-approval-status.js",
     "lint": "echo 'No linter configured'"
   },
   "dependencies": {
