@@ -719,9 +719,37 @@ export class InstagramOAuthService {
         }
       }
 
-      // If we found a matching transaction, link it
+      // If we found a matching transaction, check if another post is already linked to a transaction for this merchant in the last 24 hours
       if (matchingTransactionId) {
-        console.log(`[AUTO-LINK] Linking post ${postId} to transaction ${matchingTransactionId}`);
+        // Check if there's already a post linked to a transaction for this merchant in the last 24 hours
+        const checkExistingLinkQuery = `
+          SELECT sp.id as post_id, sp.original_transaction_id, sp.created_at, ct.merchant_id
+          FROM social_posts sp
+          JOIN cashback_transactions ct ON sp.original_transaction_id::uuid = ct.id
+          WHERE ct.merchant_id = ANY($1::uuid[])
+            AND sp.original_transaction_id IS NOT NULL
+            AND sp.id != $2
+            AND sp.created_at >= $3
+            AND sp.created_at <= $4
+          ORDER BY sp.created_at DESC
+          LIMIT 1
+        `;
+        
+        const existingLinkResult = await pool.query(checkExistingLinkQuery, [
+          merchantIds,
+          postId,
+          timeWindowStart, // 24 hours ago
+          now // Current time
+        ]);
+        
+        if (existingLinkResult.rows.length > 0) {
+          const existingLink = existingLinkResult.rows[0];
+          console.log(`[AUTO-LINK] ⚠️ Another post (${existingLink.post_id}) is already linked to transaction ${existingLink.original_transaction_id} for merchant ${existingLink.merchant_id} in the last 24 hours`);
+          console.log(`[AUTO-LINK] ⚠️ Skipping auto-link for post ${postId} to prevent multiple posts per merchant in 24h window`);
+          return null;
+        }
+        
+        console.log(`[AUTO-LINK] ✅ No existing post linked for this merchant in last 24 hours. Linking post ${postId} to transaction ${matchingTransactionId}`);
         
         // Update post with transaction ID
         await pool.query(

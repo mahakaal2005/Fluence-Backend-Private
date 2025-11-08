@@ -8,11 +8,10 @@ import { getConfig } from './config/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 
 // Import routes
-import budgetRoutes from './routes/budget.routes.js';
-import campaignRoutes from './routes/campaign.routes.js';
 import transactionRoutes from './routes/transaction.routes.js';
 import disputeRoutes from './routes/dispute.routes.js';
 import adminAnalyticsRoutes from './routes/admin-analytics.routes.js';
+import fundsRoutes from './routes/funds.routes.js';
 
 const app = express();
 const config = getConfig();
@@ -93,11 +92,10 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/budgets', budgetRoutes);
-app.use('/api/campaigns', campaignRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/disputes', disputeRoutes);
 app.use('/api/admin/analytics', adminAnalyticsRoutes);
+app.use('/api/funds', fundsRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -108,10 +106,9 @@ app.get('/', (req, res) => {
     version: process.env.npm_package_version || '1.0.0',
     endpoints: {
       health: '/health',
-      budgets: '/api/budgets',
-      campaigns: '/api/campaigns',
       transactions: '/api/transactions',
       disputes: '/api/disputes',
+      funds: '/api/funds',
       adminAnalytics: '/api/admin/analytics'
     }
   });

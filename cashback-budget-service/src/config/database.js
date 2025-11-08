@@ -55,6 +55,21 @@ export async function migrate() {
     const sqlContent = fs.readFileSync(sqlPath, 'utf8');
     await client.query(sqlContent);
 
+    // Run migration files
+    const migrationsPath = path.join(__dirname, '../../sql/migrations');
+    if (fs.existsSync(migrationsPath)) {
+      const migrationFiles = fs.readdirSync(migrationsPath)
+        .filter(file => file.endsWith('.sql'))
+        .sort(); // Run migrations in alphabetical order
+      
+      for (const file of migrationFiles) {
+        const migrationPath = path.join(migrationsPath, file);
+        const migrationContent = fs.readFileSync(migrationPath, 'utf8');
+        console.log(`Running migration: ${file}`);
+        await client.query(migrationContent);
+      }
+    }
+
     await client.query('COMMIT');
     console.log('Cashback budget database migration completed successfully');
   } catch (err) {

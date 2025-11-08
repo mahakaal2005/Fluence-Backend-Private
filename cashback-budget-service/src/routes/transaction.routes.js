@@ -11,7 +11,7 @@ const createTransactionValidation = [
   body('type').isIn(['cashback', 'payment', 'refund']).withMessage('Invalid transaction type'),
   body('customerId').isUUID().withMessage('customerId is required and must be a valid UUID'),
   body('merchantId').isUUID().withMessage('merchantId is required and must be a valid UUID'),
-  body('campaignId').optional().isUUID().withMessage('Invalid campaign ID (optional - will use active campaign if not provided)'),
+  body('cashbackPercentage').optional().isFloat({ min: 0.01, max: 100 }).withMessage('Cashback percentage must be between 0.01 and 100'),
   body('description').optional().isString().withMessage('Description must be a string'),
   body('metadata').optional().isObject().withMessage('Metadata must be an object')
 ];

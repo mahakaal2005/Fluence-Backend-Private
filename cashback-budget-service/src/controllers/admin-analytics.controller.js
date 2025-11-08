@@ -103,9 +103,8 @@ export class AdminAnalyticsController {
           ) as success_rate,
           COUNT(DISTINCT ct.customer_id) as unique_customers
         FROM cashback_transactions ct
-        JOIN merchant_budgets mb ON ct.merchant_id = mb.merchant_id
         WHERE 1=1 ${dateFilter}
-        GROUP BY ct.merchant_id, mb.business_name
+        GROUP BY ct.merchant_id
         ORDER BY total_cashback_paid DESC
         LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
         [...params, parseInt(limit), parseInt(offset)]
@@ -230,12 +229,11 @@ export class AdminAnalyticsController {
           MIN(bt.created_at) as first_settlement,
           MAX(bt.created_at) as last_settlement,
           COUNT(CASE WHEN bt.transaction_type = 'cashback_payout' THEN 1 END) as cashback_payouts,
-          COUNT(CASE WHEN bt.transaction_type = 'load' THEN 1 END) as budget_loads,
+          COUNT(CASE WHEN bt.transaction_type = 'load' THEN 1 END) as fund_loads,
           COUNT(CASE WHEN bt.transaction_type = 'refund' THEN 1 END) as refunds
         FROM budget_transactions bt
-        JOIN merchant_budgets mb ON bt.merchant_id = mb.merchant_id
         WHERE 1=1 ${dateFilter} ${merchantFilter}
-        GROUP BY bt.merchant_id, mb.business_name, bt.transaction_type
+        GROUP BY bt.merchant_id, bt.transaction_type
         ORDER BY total_amount DESC`,
         params
       );
@@ -285,13 +283,9 @@ export class AdminAnalyticsController {
           ct.error_message,
           ct.created_at,
           ct.updated_at,
-          mb.business_name as merchant_name,
-          cc.campaign_name,
           u.name as customer_name,
           u.email as customer_email
         FROM cashback_transactions ct
-        JOIN merchant_budgets mb ON ct.merchant_id = mb.merchant_id
-        LEFT JOIN cashback_campaigns cc ON ct.campaign_id = cc.id
         LEFT JOIN users u ON ct.customer_id = u.id
         WHERE ct.status = 'failed' ${dateFilter}
         ORDER BY ct.created_at DESC
@@ -332,13 +326,9 @@ export class AdminAnalyticsController {
           ct.status,
           ct.created_at,
           EXTRACT(EPOCH FROM (NOW() - ct.created_at))/3600 as hours_pending,
-          mb.business_name as merchant_name,
-          cc.campaign_name,
           u.name as customer_name,
           u.email as customer_email
         FROM cashback_transactions ct
-        JOIN merchant_budgets mb ON ct.merchant_id = mb.merchant_id
-        LEFT JOIN cashback_campaigns cc ON ct.campaign_id = cc.id
         LEFT JOIN users u ON ct.customer_id = u.id
         WHERE ct.status = 'pending'
         AND ct.created_at < NOW() - INTERVAL '${parseInt(hoursLate)} hours'
@@ -398,14 +388,10 @@ export class AdminAnalyticsController {
           (SELECT COUNT(DISTINCT merchant_id) FROM cashback_transactions WHERE 1=1 ${dateFilter}) as active_merchants,
           (SELECT COUNT(DISTINCT customer_id) FROM cashback_transactions WHERE 1=1 ${dateFilter}) as active_customers,
           
-          -- Campaign Metrics
-          (SELECT COUNT(*) FROM cashback_campaigns WHERE status = 'active') as active_campaigns,
-          (SELECT COUNT(*) FROM cashback_campaigns WHERE status = 'completed') as completed_campaigns,
-          
-          -- Budget Metrics
-          (SELECT SUM(current_balance) FROM merchant_budgets WHERE status = 'active') as total_budget_balance,
-          (SELECT SUM(total_loaded) FROM merchant_budgets WHERE status = 'active') as total_budget_loaded,
-          (SELECT SUM(total_spent) FROM merchant_budgets WHERE status = 'active') as total_budget_spent,
+          -- Funds Metrics
+          (SELECT SUM(current_balance) FROM merchant_budgets WHERE status = 'active') as total_funds_balance,
+          (SELECT SUM(total_loaded) FROM merchant_budgets WHERE status = 'active') as total_funds_loaded,
+          (SELECT SUM(total_spent) FROM merchant_budgets WHERE status = 'active') as total_funds_spent,
           
           -- Dispute Metrics
           (SELECT COUNT(*) FROM disputes WHERE status = 'open') as open_disputes,
@@ -493,19 +479,13 @@ export class AdminAnalyticsController {
           (SELECT COUNT(*) FROM cashback_transactions WHERE created_at > NOW() - INTERVAL '1 hour') as transactions_last_hour,
           (SELECT COUNT(*) FROM cashback_transactions WHERE status = 'failed' AND created_at > NOW() - INTERVAL '1 hour') as failures_last_hour,
           (SELECT COUNT(*) FROM disputes WHERE status = 'open' AND created_at > NOW() - INTERVAL '24 hours') as new_disputes_24h,
-          (SELECT COUNT(*) FROM budget_alerts WHERE created_at > NOW() - INTERVAL '24 hours') as budget_alerts_24h,
-          
           -- Performance Metrics
           (SELECT AVG(EXTRACT(EPOCH FROM (processed_at - created_at))/60) FROM cashback_transactions WHERE status = 'processed' AND processed_at IS NOT NULL AND created_at > NOW() - INTERVAL '24 hours') as avg_processing_time_minutes,
           (SELECT COUNT(*) FROM cashback_transactions WHERE status = 'pending' AND created_at < NOW() - INTERVAL '1 hour') as stuck_transactions,
           
-          -- Budget Health
+          -- Funds Health
           (SELECT COUNT(*) FROM merchant_budgets WHERE current_balance < (total_loaded * 0.1)) as low_balance_merchants,
-          (SELECT COUNT(*) FROM merchant_budgets WHERE status = 'suspended') as suspended_merchants,
-          
-          -- Campaign Health
-          (SELECT COUNT(*) FROM cashback_campaigns WHERE status = 'active' AND end_date < NOW()) as expired_campaigns,
-          (SELECT COUNT(*) FROM cashback_campaigns WHERE status = 'active' AND start_date > NOW()) as future_campaigns`
+          (SELECT COUNT(*) FROM merchant_budgets WHERE status = 'suspended') as suspended_merchants`
       );
       
       res.status(StatusCodes.OK).json({
