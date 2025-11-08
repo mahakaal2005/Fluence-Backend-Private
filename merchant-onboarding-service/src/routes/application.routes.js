@@ -14,13 +14,13 @@ const router = Router();
 
 // Public: submit application does not require auth
 router.post('/', submitApplication);
+router.get('/:applicationId', getApplication);
 
 // Protected: all other application routes
 router.use(verifyAuthToken());
 router.get('/', getUserApplications);
 router.get('/stats', getApplicationStats);
 router.get('/sla-check', getApplicationsRequiringReview);
-router.get('/:applicationId', getApplication);
 router.put('/:applicationId', updateApplication);
 router.delete('/:applicationId', deleteApplication);
 
