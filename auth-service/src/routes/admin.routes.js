@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { WalletController } from '../controllers/wallet.controller.js';
 import { BackgroundJobsService } from '../services/background-jobs.service.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createAdminUser, listUsers, updateUserRole } from '../controllers/admin.controller.js';
+import { createAdminUser, listUsers, updateUserRole, approveUser, rejectUser, getUserApprovalStatus } from '../controllers/admin.controller.js';
 import { getPool } from '../db/pool.js';
 
 const router = Router();
@@ -24,6 +24,9 @@ router.use(requireAdmin);
 router.post('/users/admin', createAdminUser);
 router.get('/users', listUsers);
 router.put('/users/:userId/role', updateUserRole);
+router.post('/users/:userId/approve', approveUser);
+router.post('/users/:userId/reject', rejectUser);
+router.get('/users/:userId/approval-status', getUserApprovalStatus);
 
 // Admin wallet management
 router.get('/admin/pending-social-posts', WalletController.getPendingSocialPosts);

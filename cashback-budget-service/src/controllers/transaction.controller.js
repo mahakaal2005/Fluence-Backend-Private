@@ -115,37 +115,98 @@ export class TransactionController {
         console.error('Failed to send transaction completion notification:', notificationErr.message);
       }
 
-      // Also create a pending points entry in Points Wallet Service for the user
+      // Check if user is approved and has Instagram connected before awarding points
+      let canReceiveCashback = false;
       try {
         const { getConfig } = await import('../config/index.js');
         const config = getConfig();
-        const pointsBase = config.services.points;
+        const { getPool } = await import('../config/database.js');
+        const pool = getPool();
 
-        // Build a JWT-like header for the target customer (points service trusts payload parsing)
-        const header = { alg: 'none', typ: 'JWT' };
-        const toBase64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-        const payload = { sub: customerId, email: `${customerId}@internal`, role: 'user' };
-        const customerJwt = `${toBase64(header)}.${toBase64(payload)}.`;
+        // Check user approval status directly from database (shared database)
+        const userResult = await pool.query(
+          'SELECT is_approved FROM users WHERE id = $1',
+          [customerId]
+        );
 
-        const earnBody = {
-          amount: Math.round(Number(amount) || 0),
-          transactionType: 'cashback',
-          description: 'Cashback pending',
-          referenceId: transaction.id,
-          socialPostRequired: true
-        };
+        if (userResult.rows.length > 0) {
+          const isApproved = userResult.rows[0].is_approved || false;
 
-        await fetch(`${pointsBase}/api/points/earn`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${customerJwt}`
-          },
-          body: JSON.stringify(earnBody)
-        });
-      } catch (earnErr) {
-        // Do not block transaction creation if points service call fails
-        console.error('Failed to enqueue pending points for transaction:', transaction.id, earnErr);
+          if (isApproved) {
+            // Check if user has Instagram connected (check social_accounts table)
+            const socialBase = config.services.social || 'http://localhost:4007';
+            
+            // Try to check via API first (more reliable)
+            try {
+              const socialResponse = await fetch(
+                `${socialBase}/api/social/accounts?platform=instagram`,
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': req.headers['authorization'] || ''
+                  }
+                }
+              );
+
+              if (socialResponse.ok) {
+                const socialData = await socialResponse.json();
+                canReceiveCashback = socialData?.data?.length > 0;
+              }
+            } catch (apiErr) {
+              // Fallback: check database directly if API fails
+              console.log('API check failed, checking database directly:', apiErr.message);
+              const socialResult = await pool.query(
+                `SELECT sa.id FROM social_accounts sa
+                 JOIN social_platforms sp ON sa.platform_id = sp.id
+                 WHERE sa.user_id = $1 AND sp.name = 'instagram' AND sa.is_connected = true
+                 LIMIT 1`,
+                [customerId]
+              );
+              canReceiveCashback = socialResult.rows.length > 0;
+            }
+          }
+        }
+      } catch (checkErr) {
+        console.error('Failed to check user approval/Instagram status:', checkErr.message);
+        // Don't award points if we can't verify
+        canReceiveCashback = false;
+      }
+
+      // Only create pending points entry if user is approved and has Instagram connected
+      if (canReceiveCashback) {
+        try {
+          const { getConfig } = await import('../config/index.js');
+          const config = getConfig();
+          const pointsBase = config.services.points;
+
+          // Build a JWT-like header for the target customer (points service trusts payload parsing)
+          const header = { alg: 'none', typ: 'JWT' };
+          const toBase64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+          const payload = { sub: customerId, email: `${customerId}@internal`, role: 'user' };
+          const customerJwt = `${toBase64(header)}.${toBase64(payload)}.`;
+
+          const earnBody = {
+            amount: Math.round(Number(amount) || 0),
+            transactionType: 'cashback',
+            description: 'Cashback pending',
+            referenceId: transaction.id,
+            socialPostRequired: true
+          };
+
+          await fetch(`${pointsBase}/api/points/earn`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${customerJwt}`
+            },
+            body: JSON.stringify(earnBody)
+          });
+        } catch (earnErr) {
+          // Do not block transaction creation if points service call fails
+          console.error('Failed to enqueue pending points for transaction:', transaction.id, earnErr);
+        }
+      } else {
+        console.log(`[TRANSACTION] User ${customerId} cannot receive cashback: not approved or Instagram not connected`);
       }
 
       res.status(201).json({

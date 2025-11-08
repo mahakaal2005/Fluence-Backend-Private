@@ -36,3 +36,11 @@ export async function updateUserProfile(id, name, email, phone, date_of_birth) {
   return result.rows[0] || null;
 }
 
+export async function updateUserApprovalStatus(id, isApproved) {
+  const result = await getPool().query(
+    `UPDATE users SET is_approved = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [id, isApproved]
+  );
+  return result.rows[0] || null;
+}
+

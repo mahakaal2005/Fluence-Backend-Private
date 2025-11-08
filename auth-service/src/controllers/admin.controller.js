@@ -1,7 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { z } from 'zod';
 import { ApiError } from '../middleware/error.js';
-import { createUser, findUserByEmail } from '../models/user.model.js';
+import { createUser, findUserByEmail, findUserById, updateUserApprovalStatus } from '../models/user.model.js';
 import { signToken } from '../utils/jwt.js';
 import { getPool } from '../db/pool.js';
 import bcrypt from 'bcrypt';
@@ -69,7 +69,7 @@ export async function listUsers(req, res, next) {
     const { page = 1, limit = 10, role, status } = req.query;
     const offset = (page - 1) * limit;
     
-    let query = 'SELECT id, name, email, role, status, created_at FROM users WHERE 1=1';
+    let query = 'SELECT id, name, email, role, status, is_approved, created_at FROM users WHERE 1=1';
     const params = [];
     let paramCount = 0;
 
@@ -189,6 +189,105 @@ export async function approveMerchantApplication(req, res, next) {
     if (err instanceof z.ZodError) {
       return next(new ApiError(StatusCodes.BAD_REQUEST, 'Invalid input data', err.flatten()));
     }
+    next(err);
+  }
+}
+
+export async function approveUser(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const { adminNotes } = req.body || {};
+
+    const user = await findUserById(userId);
+    if (!user) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    }
+
+    const updatedUser = await updateUserApprovalStatus(userId, true);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: 'User approved successfully',
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        is_approved: updatedUser.is_approved
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function rejectUser(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const { rejectionReason } = req.body || {};
+
+    const user = await findUserById(userId);
+    if (!user) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    }
+
+    const updatedUser = await updateUserApprovalStatus(userId, false);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: 'User approval rejected',
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        is_approved: updatedUser.is_approved
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUserApprovalStatus(req, res, next) {
+  try {
+    const { userId } = req.params;
+
+    const user = await findUserById(userId);
+    if (!user) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+    }
+
+    // Check if user has Instagram connected
+    const socialServiceUrl = process.env.SOCIAL_SERVICE_URL || 'http://localhost:4007';
+    let hasInstagram = false;
+    try {
+      const socialResponse = await fetch(
+        `${socialServiceUrl}/api/social/accounts?platform=instagram`,
+        {
+          headers: {
+            'Authorization': req.headers['authorization'] || ''
+          }
+        }
+      );
+      if (socialResponse.ok) {
+        const socialData = await socialResponse.json();
+        hasInstagram = socialData?.data?.length > 0;
+      }
+    } catch (err) {
+      console.log('Could not check Instagram connection:', err.message);
+    }
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      data: {
+        user_id: user.id,
+        name: user.name,
+        email: user.email,
+        is_approved: user.is_approved || false,
+        has_instagram_connected: hasInstagram,
+        can_receive_cashback: (user.is_approved || false) && hasInstagram
+      }
+    });
+  } catch (err) {
     next(err);
   }
 }
