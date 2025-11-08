@@ -14,6 +14,20 @@ export class MerchantProfileModel {
   }
 
   /**
+   * Get merchant profile by Instagram ID
+   */
+  static async getProfileByInstagramId(instagramId) {
+    const pool = getPool();
+    // Normalize instagram_id (remove @ and lowercase)
+    const normalizedId = instagramId ? instagramId.replace('@', '').toLowerCase() : null;
+    const result = await pool.query(
+      'SELECT * FROM merchant_profiles WHERE LOWER(instagram_id) = $1 AND status = $2',
+      [normalizedId, 'active']
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
    * Get merchant profile by user ID
    */
   static async getProfileByUserId(userId) {
@@ -62,7 +76,8 @@ export class MerchantProfileModel {
       businessLicense,
       taxId,
       bankAccountDetails,
-      profileImageUrl
+      profileImageUrl,
+      instagramId
     } = updateData;
 
     // Build dynamic update query based on provided fields
@@ -120,6 +135,11 @@ export class MerchantProfileModel {
       updates.push(`profile_image_url = $${paramCount}`);
       params.push(profileImageUrl);
     }
+    if (instagramId !== undefined) {
+      paramCount++;
+      updates.push(`instagram_id = $${paramCount}`);
+      params.push(instagramId ? instagramId.toLowerCase().replace('@', '') : null);
+    }
 
     if (updates.length === 0) {
       // No updates provided, return current profile
@@ -145,9 +165,9 @@ export class MerchantProfileModel {
     const result = await pool.query(
       `INSERT INTO merchant_profiles (
         user_id, application_id, business_name, business_type, contact_person,
-        email, phone, business_address, business_license, tax_id,
+        email, phone, business_address, business_license, tax_id, instagram_id,
         bank_account_details, status, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
       RETURNING *`,
       [
         application.user_id,
@@ -160,6 +180,7 @@ export class MerchantProfileModel {
         application.business_address,
         application.business_license,
         application.tax_id,
+        application.instagram_id,
         application.bank_account_details,
         'active' // New profiles start as active
       ]

@@ -20,7 +20,8 @@ const profileUpdateSchema = z.object({
     bankName: z.string().optional(),
     routingNumber: z.string().optional()
   }).optional(),
-  profileImageUrl: z.string().url().optional()
+  profileImageUrl: z.string().url().optional(),
+  instagramId: z.string().max(255).optional().transform(val => val ? val.replace('@', '').toLowerCase() : null)
 });
 
 const paginationSchema = z.object({
@@ -116,6 +117,37 @@ export async function getMerchantProfileById(req, res, next) {
       data: profileWithDetails
     });
   } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Get merchant profile by Instagram ID (public endpoint for auto-linking)
+ * This endpoint is PUBLIC and does NOT require authentication
+ */
+export async function getMerchantProfileByInstagramId(req, res, next) {
+  try {
+    console.log(`[PUBLIC-ENDPOINT] /by-instagram called with instagramId: ${req.params.instagramId}`);
+    const { instagramId } = req.params;
+
+    const profile = await MerchantProfileModel.getProfileByInstagramId(instagramId);
+    
+    if (!profile) {
+      console.log(`[PUBLIC-ENDPOINT] Merchant not found for instagramId: ${instagramId}`);
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Merchant profile not found');
+    }
+
+    console.log(`[PUBLIC-ENDPOINT] Found merchant: ${profile.id} for instagramId: ${instagramId}`);
+    res.status(StatusCodes.OK).json({
+      success: true,
+      data: {
+        id: profile.id,
+        businessName: profile.business_name,
+        instagramId: profile.instagram_id
+      }
+    });
+  } catch (err) {
+    console.error(`[PUBLIC-ENDPOINT] Error in getMerchantProfileByInstagramId:`, err.message);
     next(err);
   }
 }

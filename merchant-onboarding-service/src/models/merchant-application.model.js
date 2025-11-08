@@ -15,6 +15,7 @@ export class MerchantApplicationModel {
       businessAddress,
       businessLicense,
       taxId,
+      instagramId,
       bankAccountDetails
     } = applicationData;
 
@@ -24,11 +25,11 @@ export class MerchantApplicationModel {
     const result = await pool.query(
       `INSERT INTO merchant_applications (
         user_id, business_name, business_type, contact_person, email, phone,
-        business_address, business_license, tax_id, bank_account_details
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        business_address, business_license, tax_id, instagram_id, bank_account_details
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [
         placeholderUserId, businessName, businessType, contactPerson, email.toLowerCase(),
-        phone, JSON.stringify(businessAddress), businessLicense, taxId, bankAccountDetails
+        phone, JSON.stringify(businessAddress), businessLicense, taxId, instagramId, bankAccountDetails
       ]
     );
 
@@ -125,6 +126,7 @@ export class MerchantApplicationModel {
       businessAddress,
       businessLicense,
       taxId,
+      instagramId,
       bankAccountDetails
     } = updateData;
 
@@ -132,11 +134,11 @@ export class MerchantApplicationModel {
       `UPDATE merchant_applications 
        SET business_name = $2, business_type = $3, contact_person = $4,
            email = $5, phone = $6, business_address = $7, business_license = $8,
-           tax_id = $9, bank_account_details = $10, updated_at = NOW()
+           tax_id = $9, instagram_id = $10, bank_account_details = $11, updated_at = NOW()
        WHERE id = $1 AND status = 'pending' RETURNING *`,
       [
         applicationId, businessName, businessType, contactPerson, email.toLowerCase(),
-        phone, businessAddress ? JSON.stringify(businessAddress) : undefined, businessLicense, taxId, bankAccountDetails
+        phone, businessAddress ? JSON.stringify(businessAddress) : undefined, businessLicense, taxId, instagramId, bankAccountDetails
       ]
     );
     return result.rows[0] || null;

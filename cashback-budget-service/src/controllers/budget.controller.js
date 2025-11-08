@@ -19,7 +19,43 @@ export class BudgetController {
       const initialAmount = Number(req.body.amount);
       const currency = req.body.currency || 'AED';
 
-      const budget = await BudgetModel.createBudget(req.user.id, initialAmount, currency);
+      // Get merchant profile ID from user ID
+      // Priority: 1. Request body merchantId, 2. Fetch from merchant service, 3. Use user.id as fallback
+      let merchantId = req.body.merchantId;
+      
+      if (!merchantId) {
+        try {
+          const { getConfig } = await import('../config/index.js');
+          const config = getConfig();
+          const merchantServiceUrl = config.services?.merchant || process.env.MERCHANT_ONBOARDING_SERVICE_URL || 'http://localhost:4003';
+
+          const response = await fetch(`${merchantServiceUrl}/api/profiles/me`, {
+            method: 'GET',
+            headers: {
+              'Authorization': req.headers.authorization || '',
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.data?.id) {
+              merchantId = data.data.id; // Merchant profile ID
+              console.log(`[BUDGET] Found merchant profile ID: ${merchantId} for user: ${req.user.id}`);
+            }
+          }
+        } catch (error) {
+          console.error('[BUDGET] Error fetching merchant profile:', error.message);
+        }
+      }
+
+      // Fallback to user.id if merchant profile not found (for backward compatibility)
+      if (!merchantId) {
+        merchantId = req.user.id;
+        console.warn(`[BUDGET] Using user.id as merchantId (fallback): ${merchantId}`);
+      }
+
+      const budget = await BudgetModel.createBudget(merchantId, initialAmount, currency);
       
       res.status(201).json({
         success: true,

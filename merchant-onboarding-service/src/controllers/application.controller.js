@@ -60,6 +60,7 @@ const applicationSchema = z.object({
   businessAddress: addressSchema,
   businessLicense: z.string().optional(),
   taxId: z.string().optional(),
+  instagramId: z.string().max(255).optional().transform(val => val ? val.replace('@', '').toLowerCase() : null),
   bankAccountDetails: z.object({
     accountNumber: z.string().optional(),
     bankName: z.string().optional(),

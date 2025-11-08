@@ -12,16 +12,19 @@ import {
   getMerchantProfileWithActivity,
   updateMerchantProfileStatus,
   uploadProfileImage,
-  uploadSingleImage
+  uploadSingleImage,
+  getMerchantProfileByInstagramId
 } from '../controllers/profile.controller.js';
 
 const router = Router();
 
-// Public routes (no auth required)
+// Public routes (no auth required) - MUST be defined before verifyAuthToken() middleware
 router.get('/active', getActiveMerchantProfiles);
 router.get('/business-type/:businessType', getMerchantProfilesByBusinessType);
 router.get('/search', searchMerchantProfiles);
 router.get('/stats', getMerchantProfileStats);
+// Public endpoint for auto-linking social posts to transactions - no authentication required
+router.get('/by-instagram/:instagramId', getMerchantProfileByInstagramId);
 router.put('/:merchantId/avatar', uploadSingleImage('image'), uploadProfileImage);
 
 // Protected routes (require authentication)

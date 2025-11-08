@@ -39,7 +39,8 @@ export function getConfig() {
     auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4001',
     points: process.env.POINTS_SERVICE_URL || 'http://localhost:4005',
     referral: process.env.REFERRAL_SERVICE_URL || 'http://localhost:4006',
-    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4004'
+    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4004',
+    merchant: process.env.MERCHANT_ONBOARDING_SERVICE_URL || 'http://localhost:4003'
   };
 
   // Social media configuration

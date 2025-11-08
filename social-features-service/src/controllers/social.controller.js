@@ -1264,11 +1264,13 @@ export class SocialController {
 
       // If sync is true, also sync to database
       if (sync === 'true') {
+        const authToken = req.headers.authorization || null;
         const syncResult = await InstagramOAuthService.syncInstagramPosts(
           userId,
           accountId,
           accessToken,
-          parseInt(limit)
+          parseInt(limit),
+          authToken
         );
 
         return res.status(StatusCodes.OK).json({
@@ -1357,11 +1359,14 @@ export class SocialController {
       }
 
       // Sync posts to database
+      // Pass auth token for service-to-service calls
+      const authToken = req.headers.authorization || null;
       const syncResult = await InstagramOAuthService.syncInstagramPosts(
         userId,
         accountId,
         accessToken,
-        parseInt(maxPosts)
+        parseInt(maxPosts),
+        authToken
       );
 
       res.status(StatusCodes.OK).json({
