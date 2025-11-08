@@ -183,21 +183,11 @@ export async function getUserApplications(req, res, next) {
 export async function getApplication(req, res, next) {
   try {
     const { applicationId } = req.params;
-    const userId = req.user?.id;
-
-    if (!userId) {
-      throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
-    }
 
     const application = await MerchantApplicationModel.getApplicationById(applicationId);
 
     if (!application) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Application not found');
-    }
-
-    // Check if user owns this application (unless admin)
-    if (application.user_id !== userId && req.user?.role !== 'admin') {
-      throw new ApiError(StatusCodes.FORBIDDEN, 'Access denied');
     }
 
     // Get status history
