@@ -36,16 +36,6 @@ function sanitizePost(post) {
 
 export class AdminSocialController {
   /**
-   * Get all posts from all users (admin only)
-   * Supports filtering by status, platform, user, and date range
-   */
-  static async getAllPosts(req, res, next) {
-    try {
-      console.log('📝 [POSTS] Get all posts request');
-      console.log('   Query params:', req.query);
-      console.log('   Admin user:', req.user);
-
-      const { limit = 50, offset = 0, platformId, status, userId, startDate, endDate } = req.query;
    * Get all posts with filtering options (admin only)
    */
   static async getAllPosts(req, res, next) {
@@ -76,7 +66,6 @@ export class AdminSocialController {
           pl.name as platform_name,
           pl.display_name as platform_display_name,
           u.name as user_name,
-          u.email as user_email
           u.email as user_email,
           sv.status as verification_status,
           sv.verified_by,
@@ -92,12 +81,6 @@ export class AdminSocialController {
 
       let params = [];
       let paramCount = 0;
-
-      if (platformId) {
-        paramCount++;
-        query += ` AND sa.platform_id = $${paramCount}`;
-        params.push(platformId);
-      }
 
       // Filter by status
       if (status) {
@@ -140,20 +123,19 @@ export class AdminSocialController {
         params.push(endDate);
       }
 
-      query += ` ORDER BY sp.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-      params.push(parseInt(limit), parseInt(offset));
-
-      console.log('🔍 [POSTS] Executing query');
-      const posts = await pool.query(query, params);
-      console.log('✅ [POSTS] Found', posts.rows.length, 'posts');
-
-      // Get total count for pagination
       // Search in content
       if (search) {
         paramCount++;
         query += ` AND (sp.content ILIKE $${paramCount} OR sa.username ILIKE $${paramCount} OR u.name ILIKE $${paramCount})`;
         params.push(`%${search}%`);
       }
+
+      query += ` ORDER BY sp.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+      params.push(parseInt(limit), parseInt(offset));
+
+      console.log('🔍 [ADMIN_POSTS] Executing query');
+      const posts = await pool.query(query, params);
+      console.log('✅ [ADMIN_POSTS] Found', posts.rows.length, 'posts');
 
       // Get total count for pagination (use same WHERE conditions but without LIMIT/OFFSET)
       let countQuery = `
@@ -165,22 +147,6 @@ export class AdminSocialController {
       let countParams = [];
       let countParamCount = 0;
 
-      if (platformId) {
-        countParamCount++;
-        countQuery += ` AND sa.platform_id = $${countParamCount}`;
-        countParams.push(platformId);
-      }
-
-        JOIN social_platforms pl ON sa.platform_id = pl.id
-        JOIN users u ON sp.user_id = u.id
-        LEFT JOIN social_verification sv ON sp.id = sv.post_id
-        WHERE 1=1
-      `;
-      
-      // Rebuild the WHERE conditions for count query (same as main query)
-      let countParams = [];
-      let countParamCount = 0;
-      
       if (status) {
         countParamCount++;
         countQuery += ` AND sp.status = $${countParamCount}`;
@@ -192,6 +158,7 @@ export class AdminSocialController {
         countQuery += ` AND sa.platform_id = $${countParamCount}`;
         countParams.push(platformId);
       }
+
       if (userId) {
         countParamCount++;
         countQuery += ` AND sp.user_id = $${countParamCount}`;
@@ -203,6 +170,7 @@ export class AdminSocialController {
         countQuery += ` AND sp.post_type = $${countParamCount}`;
         countParams.push(postType);
       }
+
       if (startDate) {
         countParamCount++;
         countQuery += ` AND sp.created_at >= $${countParamCount}`;
@@ -213,6 +181,13 @@ export class AdminSocialController {
         countParamCount++;
         countQuery += ` AND sp.created_at <= $${countParamCount}`;
         countParams.push(endDate);
+      }
+
+      // Search in content (same as main query)
+      if (search) {
+        countParamCount++;
+        countQuery += ` AND (sp.content ILIKE $${countParamCount} OR sa.username ILIKE $${countParamCount} OR u.name ILIKE $${countParamCount})`;
+        countParams.push(`%${search}%`);
       }
 
       const countResult = await pool.query(countQuery, countParams);
@@ -245,25 +220,6 @@ export class AdminSocialController {
           });
         })
       );
-      if (search) {
-        countParamCount++;
-        countQuery += ` AND (sp.content ILIKE $${countParamCount} OR sa.username ILIKE $${countParamCount} OR u.name ILIKE $${countParamCount})`;
-        countParams.push(`%${search}%`);
-      }
-      
-      const countResult = await pool.query(countQuery, countParams);
-      const totalCount = parseInt(countResult.rows[0].total);
-
-      // Add ordering and pagination
-      query += ` ORDER BY sp.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-      params.push(parseInt(limit), parseInt(offset));
-
-      console.log('🔍 [ADMIN_POSTS] Executing query');
-      const posts = await pool.query(query, params);
-      console.log('✅ [ADMIN_POSTS] Found', posts.rows.length, 'posts out of', totalCount);
-
-      // Sanitize posts
-      const sanitizedPosts = posts.rows.map(post => sanitizePost(post));
 
       res.status(StatusCodes.OK).json({
         success: true,
@@ -272,20 +228,13 @@ export class AdminSocialController {
           pagination: {
             limit: parseInt(limit),
             offset: parseInt(offset),
-            count: posts.rows.length,
-            total: totalCount
-          posts: sanitizedPosts,
-          pagination: {
-            limit: parseInt(limit),
-            offset: parseInt(offset),
-            count: sanitizedPosts.length,
+            count: postsWithDuplicateCheck.length,
             total: totalCount,
             hasMore: (parseInt(offset) + parseInt(limit)) < totalCount
           }
         }
       });
     } catch (error) {
-      console.log('❌ [POSTS] Error in getAllPosts:', error.message);
       console.log('❌ [ADMIN_POSTS] Error in getAllPosts:', error.message);
       next(error);
     }

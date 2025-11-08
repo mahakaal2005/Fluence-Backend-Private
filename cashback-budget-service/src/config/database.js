@@ -16,7 +16,7 @@ function createPool() {
     user: process.env.CASHBACK_DB_USER || 'bp-user',
     password: process.env.CASHBACK_DB_PASSWORD || 'k?b0fY3ZB!lB6lJiB*7EqaK',
     ssl: process.env.CASHBACK_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    max: parseInt(process.env.CASHBACK_DB_MAX_CONNECTIONS || '20'),
+    max: parseInt(process.env.CASHBACK_DB_MAX_CONNECTIONS || '10'),
     idleTimeoutMillis: parseInt(process.env.CASHBACK_DB_IDLE_TIMEOUT || '30000'),
     connectionTimeoutMillis: parseInt(process.env.CASHBACK_DB_CONNECTION_TIMEOUT || '10000'),
   };

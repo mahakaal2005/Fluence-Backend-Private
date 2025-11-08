@@ -16,9 +16,9 @@ function createPool() {
     user: process.env.SOCIAL_DB_USER || 'bp-user',
     password: process.env.SOCIAL_DB_PASSWORD || 'k?b0fY3ZB!lB6lJiB*7EqaK',
     ssl: process.env.SOCIAL_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    max: parseInt(process.env.SOCIAL_DB_MAX_CONNECTIONS || '20'),
+    max: parseInt(process.env.SOCIAL_DB_MAX_CONNECTIONS || '10'),
     idleTimeoutMillis: parseInt(process.env.SOCIAL_DB_IDLE_TIMEOUT || '30000'),
-    connectionTimeoutMillis: parseInt(process.env.SOCIAL_DB_CONNECTION_TIMEOUT || '2000'),
+    connectionTimeoutMillis: parseInt(process.env.SOCIAL_DB_CONNECTION_TIMEOUT || '15000'),
     client_encoding: 'UTF8',
   };
 
