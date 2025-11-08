@@ -10,7 +10,8 @@ const createTransactionValidation = [
   body('amount').isNumeric().withMessage('Amount must be a number'),
   body('type').isIn(['cashback', 'payment', 'refund']).withMessage('Invalid transaction type'),
   body('customerId').isUUID().withMessage('customerId is required and must be a valid UUID'),
-  body('campaignId').optional().isUUID().withMessage('Invalid campaign ID'),
+  body('merchantId').isUUID().withMessage('merchantId is required and must be a valid UUID'),
+  body('campaignId').optional().isUUID().withMessage('Invalid campaign ID (optional - will use active campaign if not provided)'),
   body('description').optional().isString().withMessage('Description must be a string'),
   body('metadata').optional().isObject().withMessage('Metadata must be an object')
 ];
