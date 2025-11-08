@@ -116,16 +116,18 @@ export class TransactionController {
         const { getPool } = await import('../config/database.js');
         const pool = getPool();
 
-        // Check user approval status directly from database (shared database)
+        // Check user approval status AND suspension status directly from database (shared database)
         const userResult = await pool.query(
-          'SELECT is_approved FROM users WHERE id = $1',
+          'SELECT is_approved, status FROM users WHERE id = $1',
           [customerId]
         );
 
         if (userResult.rows.length > 0) {
           const isApproved = userResult.rows[0].is_approved || false;
+          const userStatus = userResult.rows[0].status || 'active';
 
-          if (isApproved) {
+          // User must be approved AND not suspended to receive cashback
+          if (isApproved && userStatus !== 'suspended') {
             // Check if user has Instagram connected (check social_accounts table)
             const socialBase = config.services.social || 'http://localhost:4007';
             
@@ -199,7 +201,7 @@ export class TransactionController {
           console.error('Failed to enqueue pending points for transaction:', transaction.id, earnErr);
         }
       } else {
-        console.log(`[TRANSACTION] User ${customerId} cannot receive cashback: not approved or Instagram not connected`);
+        console.log(`[TRANSACTION] User ${customerId} cannot receive cashback: not approved, suspended, or Instagram not connected`);
       }
 
       res.status(201).json({
