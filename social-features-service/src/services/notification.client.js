@@ -51,7 +51,7 @@ export class NotificationClient {
     const message = platform
       ? `Your social post has been created successfully on ${platform}!`
       : `Your social post has been created successfully!`;
-    
+
     const data = {
       postId,
       platform,
@@ -68,7 +68,7 @@ export class NotificationClient {
   static async sendSocialPostPublishedNotification(userId, postId, platform, postUrl = null, sentBy = null) {
     const title = 'Social Post Published';
     const message = `Your social post has been published on ${platform}!`;
-    
+
     const data = {
       postId,
       platform,
@@ -77,6 +77,41 @@ export class NotificationClient {
     };
 
     return await this.sendNotification(userId, 'in_app', title, message, data, sentBy);
+  }
+
+  /**
+   * Send admin notification for new social post
+   * Notifies all admins when a user creates a new post
+   */
+  static async sendAdminNewPostNotification(postData, sentBy = null) {
+    try {
+      const config = getConfig();
+      const notificationServiceUrl = config.services.notification;
+      const serviceApiKey = process.env.SERVICE_API_KEY || 'internal-service-key';
+
+      const response = await fetch(`${notificationServiceUrl}/api/notifications/internal/admin/new-post`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Service-API-Key': serviceApiKey
+        },
+        body: JSON.stringify({
+          postData,
+          sentBy
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Notification service error: ${response.status} - ${errorData.error || response.statusText}`);
+      }
+
+      const result = await response.json();
+      return result.data;
+    } catch (error) {
+      console.error('Failed to send admin new post notification:', error.message);
+      return null;
+    }
   }
 }
 

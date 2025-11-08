@@ -95,11 +95,44 @@ export async function submitApplication(req, res, next) {
       application.business_address = formatAddressString(application.business_address);
     }
 
-    // Send notification
+    // Send notifications
     try {
+      // Send email notification (existing functionality)
       await NotificationService.sendApplicationSubmittedNotification(application);
     } catch (notificationError) {
-      console.warn('Failed to send notification:', notificationError.message);
+      console.warn('Failed to send email notification:', notificationError.message);
+      // Don't fail the application if notification fails
+    }
+
+    // Send in-app notification to applicant and admins
+    try {
+      const { NotificationClient } = await import('../services/notification.client.js');
+
+      // Get user ID from request (if authenticated)
+      const userId = req.user?.id;
+
+      // Send notification to applicant if they're logged in
+      if (userId) {
+        await NotificationClient.sendApplicationSubmittedNotification(
+          userId,
+          application,
+          'merchant-onboarding-service'
+        );
+      }
+
+      // Send notification to all admins
+      await NotificationClient.sendAdminNewMerchantApplicationNotification(
+        {
+          applicationId: application.id,
+          businessName: application.business_name,
+          businessType: application.business_type,
+          contactPerson: application.contact_person,
+          email: application.email
+        },
+        userId || 'merchant-onboarding-service'
+      );
+    } catch (notificationError) {
+      console.warn('Failed to send in-app notifications:', notificationError.message);
       // Don't fail the application if notification fails
     }
 

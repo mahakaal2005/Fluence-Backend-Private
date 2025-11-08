@@ -154,7 +154,7 @@ export class SocialController {
         try {
           // Convert UUID to string for comparison (reference_id is TEXT)
           const referenceId = typeof transactionId === 'string' ? transactionId : transactionId.toString();
-          
+
           const updateResult = await pool.query(
             `UPDATE points_transactions 
              SET social_post_made = true, updated_at = NOW()
@@ -177,21 +177,37 @@ export class SocialController {
       // Send notification for social post creation
       try {
         const { NotificationClient } = await import('../services/notification.client.js');
-        // Get platform name from account
+        // Get platform name and user info from account
         const platformResult = await pool.query(
-          `SELECT sp.name as platform_name 
+          `SELECT sp.name as platform_name, u.name as username
            FROM social_accounts sa
            JOIN social_platforms sp ON sa.platform_id = sp.id
+           LEFT JOIN users u ON sa.user_id = u.id
            WHERE sa.id = $1`,
           [socialAccountId]
         );
         const platformName = platformResult.rows.length > 0 ? platformResult.rows[0].platform_name : null;
-        
+        const username = platformResult.rows.length > 0 ? platformResult.rows[0].username : null;
+
+        // Send notification to user
         await NotificationClient.sendSocialPostCreatedNotification(
           userId,
           post.rows[0].id,
           platformName,
           postType || 'text',
+          userId // sentBy is the user who created the post
+        );
+
+        // Send notification to admins
+        await NotificationClient.sendAdminNewPostNotification(
+          {
+            postId: post.rows[0].id,
+            userId: userId,
+            username: username,
+            platform: platformName,
+            postType: postType || 'text',
+            contentPreview: content
+          },
           userId // sentBy is the user who created the post
         );
       } catch (notificationErr) {
@@ -721,11 +737,11 @@ export class SocialController {
     try {
       const userId = req.user.id;
       const config = getConfig();
-      
+
       // Generate redirect URI - should match what's configured in Meta Developer Console
       // Priority: 1. Request body, 2. Environment variable, 3. Auto-detect (with localhost warning)
-      const redirectUri = req.body.redirectUri || 
-        process.env.INSTAGRAM_REDIRECT_URI || 
+      const redirectUri = req.body.redirectUri ||
+        process.env.INSTAGRAM_REDIRECT_URI ||
         `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
 
       // Normalize redirect URI
@@ -733,7 +749,7 @@ export class SocialController {
 
       // Check if using localhost (Meta doesn't allow localhost redirect URIs)
       const isLocalhost = normalizedRedirectUri.includes('localhost') || normalizedRedirectUri.includes('127.0.0.1');
-      
+
       // Generate state parameter for security (optional but recommended)
       const state = Buffer.from(JSON.stringify({ userId, timestamp: Date.now() })).toString('base64');
 
@@ -871,7 +887,7 @@ export class SocialController {
 
       // Get redirect URI (should match the one used in initiateInstagramOAuth)
       const config = getConfig();
-      const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || 
+      const redirectUri = process.env.INSTAGRAM_REDIRECT_URI ||
         `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
 
       // Normalize redirect URI to match the one used in authorization
@@ -887,8 +903,8 @@ export class SocialController {
       // Check if this is a mobile app callback (deep link) or web callback
       // Deep links use custom URL schemes (e.g., myapp://, fluence://)
       // Web URLs use http:// or https://
-      const isDeepLink = redirectUri && 
-        !redirectUri.startsWith('http://') && 
+      const isDeepLink = redirectUri &&
+        !redirectUri.startsWith('http://') &&
         !redirectUri.startsWith('https://') &&
         redirectUri.includes('://');
 
@@ -899,7 +915,7 @@ export class SocialController {
           success: true,
           data: connectedAccount,
           message: 'Instagram account connected successfully',
-          deepLink: redirectUri.includes('?') 
+          deepLink: redirectUri.includes('?')
             ? `${redirectUri}&success=true&accountId=${connectedAccount.id}`
             : `${redirectUri}?success=true&accountId=${connectedAccount.id}`
         });
@@ -908,7 +924,7 @@ export class SocialController {
       // For web apps, redirect to frontend success page
       // Use FRONTEND_URL if set, otherwise try to construct from tunnel URL or use localhost
       let frontendUrl = process.env.FRONTEND_URL;
-      
+
       if (!frontendUrl) {
         // If we're behind a tunnel, try to construct frontend URL from the request
         const host = req.get('host');
@@ -921,16 +937,16 @@ export class SocialController {
           frontendUrl = 'http://localhost:3000';
         }
       }
-      
+
       res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
     } catch (error) {
       console.error('Instagram callback error:', error);
-      
+
       // Check if this is a mobile app callback
-      const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || 
+      const redirectUri = process.env.INSTAGRAM_REDIRECT_URI ||
         `${req.protocol}://${req.get('host')}/api/social/instagram/callback`;
-      const isDeepLink = redirectUri && 
-        !redirectUri.startsWith('http://') && 
+      const isDeepLink = redirectUri &&
+        !redirectUri.startsWith('http://') &&
         !redirectUri.startsWith('https://') &&
         redirectUri.includes('://');
 
@@ -939,7 +955,7 @@ export class SocialController {
         return res.status(StatusCodes.BAD_REQUEST).json({
           success: false,
           error: error.message || 'Failed to connect Instagram account',
-          deepLink: redirectUri.includes('?') 
+          deepLink: redirectUri.includes('?')
             ? `${redirectUri}&error=${encodeURIComponent(error.message || 'Failed to connect')}`
             : `${redirectUri}?error=${encodeURIComponent(error.message || 'Failed to connect')}`
         });
@@ -995,7 +1011,7 @@ export class SocialController {
         try {
           const refreshedToken = await InstagramOAuthService.refreshToken(accessToken);
           accessToken = refreshedToken.accessToken;
-          
+
           // Update token in database
           await pool.query(
             'UPDATE social_accounts SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3',
@@ -1094,7 +1110,7 @@ export class SocialController {
         try {
           const refreshedToken = await InstagramOAuthService.refreshToken(accessToken);
           accessToken = refreshedToken.accessToken;
-          
+
           // Update token in database
           await pool.query(
             'UPDATE social_accounts SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3',

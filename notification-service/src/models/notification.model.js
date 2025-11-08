@@ -15,14 +15,14 @@ export class NotificationModel {
         `SELECT email FROM users WHERE id = $1 LIMIT 1`,
         [userId]
       );
-      
+
       if (dbResult.rows.length > 0 && dbResult.rows[0].email) {
         return dbResult.rows[0].email;
       }
     } catch (dbError) {
       // If database query fails (separate DB or table doesn't exist), try API
       console.log('Database query failed, trying API:', dbError.message);
-      
+
       try {
         const config = getConfig();
         const authServiceUrl = config.services.auth;
@@ -44,7 +44,7 @@ export class NotificationModel {
         console.error('API call also failed:', apiError.message);
       }
     }
-    
+
     return null;
   }
 
@@ -69,7 +69,7 @@ export class NotificationModel {
     if (!userEmail && userId) {
       userEmail = await this.getUserEmail(userId);
     }
-    
+
     // Fallback to default if still no email found
     if (!userEmail) {
       userEmail = 'user@fluence.com';
@@ -77,10 +77,10 @@ export class NotificationModel {
     }
 
     // Build metadata object with sentAt and sentBy
-    const sentAtISO = sentAt && sentAt.toISOString 
-      ? sentAt.toISOString() 
+    const sentAtISO = sentAt && sentAt.toISOString
+      ? sentAt.toISOString()
       : (typeof sentAt === 'string' ? sentAt : (sentAt ? new Date(sentAt).toISOString() : new Date().toISOString()));
-    
+
     const metadata = {
       sentAt: sentAtISO,
       ...(sentBy && { sentBy }),
@@ -109,13 +109,26 @@ export class NotificationModel {
    */
   static async getUserNotifications(userId, limit = 50, offset = 0) {
     const pool = getPool();
+
+    // Get notifications with read count
+    // For notifications sent to multiple users (same subject, message, and sent_at within 5 seconds),
+    // count how many users have read their copy of the notification
     const result = await pool.query(
-      `SELECT * FROM notifications 
-       WHERE user_id = $1 
-       ORDER BY created_at DESC 
+      `SELECT 
+         n.*,
+         CAST((SELECT COUNT(*) 
+          FROM notifications n2 
+          WHERE n2.subject = n.subject
+            AND n2.message = n.message
+            AND ABS(EXTRACT(EPOCH FROM (n2.sent_at - n.sent_at))) <= 5
+            AND n2.read_at IS NOT NULL) AS INTEGER) as read_count
+       FROM notifications n
+       WHERE n.user_id = $1 
+       ORDER BY n.created_at DESC 
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset]
     );
+
     return result.rows;
   }
 
@@ -138,7 +151,8 @@ export class NotificationModel {
     const pool = getPool();
     const result = await pool.query(
       `UPDATE notifications 
-       SET read_at = NOW() 
+       SET read_at = NOW(), 
+           opened_at = COALESCE(opened_at, NOW())
        WHERE id = $1 AND user_id = $2 RETURNING *`,
       [notificationId, userId]
     );

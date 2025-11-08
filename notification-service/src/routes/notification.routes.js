@@ -4,14 +4,17 @@ import { NotificationController } from '../controllers/notification.controller.j
 
 const router = Router();
 
-// Internal service-to-service endpoint (before auth middleware)
+// Internal service-to-service endpoints (before auth middleware)
 router.post('/internal/create', verifyServiceAuth(), NotificationController.createInternalNotification);
+router.post('/internal/admin/new-post', verifyServiceAuth(), NotificationController.createAdminNewPostNotification);
+router.post('/internal/admin/new-merchant-application', verifyServiceAuth(), NotificationController.createAdminNewMerchantApplicationNotification);
 
 // All other notification routes require authentication
 router.use(verifyAuthToken());
 
 // Notification management routes
 router.get('/', NotificationController.getNotifications);
+router.get('/sent-with-stats', NotificationController.getSentNotificationsWithStats);
 router.get('/unread-count', NotificationController.getUnreadCount);
 router.get('/type/:type', NotificationController.getNotificationsByType);
 router.get('/date-range', NotificationController.getNotificationsByDateRange);

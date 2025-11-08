@@ -36,6 +36,165 @@ function sanitizePost(post) {
 
 export class AdminSocialController {
   /**
+   * Get all posts from all users (admin only)
+   * Supports filtering by status, platform, user, and date range
+   */
+  static async getAllPosts(req, res, next) {
+    try {
+      console.log('📝 [POSTS] Get all posts request');
+      console.log('   Query params:', req.query);
+      console.log('   Admin user:', req.user);
+
+      const { limit = 50, offset = 0, platformId, status, userId, startDate, endDate } = req.query;
+      const pool = getPool();
+
+      let query = `
+        SELECT 
+          sp.*,
+          sa.username,
+          sa.display_name,
+          sa.profile_picture_url,
+          pl.name as platform_name,
+          pl.display_name as platform_display_name,
+          u.name as user_name,
+          u.email as user_email
+        FROM social_posts sp
+        JOIN social_accounts sa ON sp.social_account_id = sa.id
+        JOIN social_platforms pl ON sa.platform_id = pl.id
+        JOIN users u ON sp.user_id = u.id
+        WHERE 1=1
+      `;
+
+      let params = [];
+      let paramCount = 0;
+
+      if (platformId) {
+        paramCount++;
+        query += ` AND sa.platform_id = $${paramCount}`;
+        params.push(platformId);
+      }
+
+      if (status) {
+        paramCount++;
+        query += ` AND sp.status = $${paramCount}`;
+        params.push(status);
+      }
+
+      if (userId) {
+        paramCount++;
+        query += ` AND sp.user_id = $${paramCount}`;
+        params.push(userId);
+      }
+
+      if (startDate) {
+        paramCount++;
+        query += ` AND sp.created_at >= $${paramCount}`;
+        params.push(startDate);
+      }
+
+      if (endDate) {
+        paramCount++;
+        query += ` AND sp.created_at <= $${paramCount}`;
+        params.push(endDate);
+      }
+
+      query += ` ORDER BY sp.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+      params.push(parseInt(limit), parseInt(offset));
+
+      console.log('🔍 [POSTS] Executing query');
+      const posts = await pool.query(query, params);
+      console.log('✅ [POSTS] Found', posts.rows.length, 'posts');
+
+      // Get total count for pagination
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM social_posts sp
+        JOIN social_accounts sa ON sp.social_account_id = sa.id
+        WHERE 1=1
+      `;
+      let countParams = [];
+      let countParamCount = 0;
+
+      if (platformId) {
+        countParamCount++;
+        countQuery += ` AND sa.platform_id = $${countParamCount}`;
+        countParams.push(platformId);
+      }
+
+      if (status) {
+        countParamCount++;
+        countQuery += ` AND sp.status = $${countParamCount}`;
+        countParams.push(status);
+      }
+
+      if (userId) {
+        countParamCount++;
+        countQuery += ` AND sp.user_id = $${countParamCount}`;
+        countParams.push(userId);
+      }
+
+      if (startDate) {
+        countParamCount++;
+        countQuery += ` AND sp.created_at >= $${countParamCount}`;
+        countParams.push(startDate);
+      }
+
+      if (endDate) {
+        countParamCount++;
+        countQuery += ` AND sp.created_at <= $${countParamCount}`;
+        countParams.push(endDate);
+      }
+
+      const countResult = await pool.query(countQuery, countParams);
+      const totalCount = parseInt(countResult.rows[0].total);
+
+      // Check for duplicates for each post and sanitize text
+      const postsWithDuplicateCheck = await Promise.all(
+        posts.rows.map(async (post) => {
+          if (!post.content_hash) {
+            // Generate hash if missing
+            post.content_hash = crypto.createHash('sha256')
+              .update(post.content.toLowerCase().trim())
+              .digest('hex');
+          }
+
+          // Check for duplicates within 7 days
+          const duplicates = await pool.query(
+            `SELECT COUNT(*) as count
+             FROM social_posts
+             WHERE content_hash = $1 
+             AND id != $2
+             AND created_at > NOW() - INTERVAL '7 days'`,
+            [post.content_hash, post.id]
+          );
+
+          return sanitizePost({
+            ...post,
+            has_duplicates: parseInt(duplicates.rows[0].count) > 0,
+            duplicate_count: parseInt(duplicates.rows[0].count)
+          });
+        })
+      );
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          posts: postsWithDuplicateCheck,
+          pagination: {
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            count: posts.rows.length,
+            total: totalCount
+          }
+        }
+      });
+    } catch (error) {
+      console.log('❌ [POSTS] Error in getAllPosts:', error.message);
+      next(error);
+    }
+  }
+
+  /**
    * Get all posts pending review (admin only)
    */
   static async getPendingPosts(req, res, next) {
@@ -180,31 +339,31 @@ export class AdminSocialController {
   static async approvePost(req, res, next) {
     try {
       console.log('✅ [POSTS] Approve post request:', req.params.postId);
-  
+
       const { postId } = req.params;
       const { adminNotes } = req.body;
       const adminId = req.user.id;
       const pool = getPool();
-  
+
       // 🔹 Step 1: Fetch original_transaction_id from social_posts
       const postResult = await pool.query(
         `SELECT user_id, original_transaction_id FROM social_posts WHERE id = $1`,
         [postId]
       );
-  
+
       if (postResult.rows.length === 0) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Post not found');
       }
-  
+
       const { user_id, original_transaction_id } = postResult.rows[0];
-  
+
       // 🔹 Step 2: Generate JWT for admin user
       const adminJwt = signToken({
         sub: req.user.id,
         email: req.user.email,
         role: 'admin'
       });
-  
+
       // 🔹 Step 3: Call Cashback Budget Service with postId and original_transaction_id
       const response = await fetch(
         `${CASHBACK_BUDGET_SERVICE_URL}/api/transactions/${original_transaction_id}/process`,
@@ -216,12 +375,12 @@ export class AdminSocialController {
           }
         }
       );
-  
+
       // Optional: handle non-OK response
       if (!response.ok) {
         throw new ApiError(StatusCodes.BAD_REQUEST, 'Failed to process cashback transaction');
       }
-  
+
       // 🔹 Step 4: Update post status to approved
       const updatedPost = await pool.query(
         `UPDATE social_posts 
@@ -229,7 +388,7 @@ export class AdminSocialController {
          WHERE id = $1 RETURNING *`,
         [postId]
       );
-  
+
       // 🔹 Step 5: Create verification record
       await pool.query(
         `INSERT INTO social_verification (
@@ -238,18 +397,18 @@ export class AdminSocialController {
         ) VALUES ($1, $2, 'manual', 'verified', $3, NOW(), $4)`,
         [user_id, postId, adminId, adminNotes]
       );
-  
+
       res.status(StatusCodes.OK).json({
         success: true,
         data: updatedPost.rows[0],
         message: 'Post approved successfully'
       });
-  
+
     } catch (error) {
       next(error);
     }
   }
-  
+
 
   /**
    * Reject a post (admin only)

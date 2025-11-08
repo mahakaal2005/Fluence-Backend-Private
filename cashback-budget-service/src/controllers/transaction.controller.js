@@ -358,7 +358,14 @@ export class TransactionController {
             cashbackPercentage: parseFloat(t.cashback_percentage),
             originalTransactionId: t.original_transaction_id,
             processedAt: t.processed_at,
-            createdAt: t.created_at
+            createdAt: t.created_at,
+            metadata: {
+              storeName: t.campaign_name || 'Unknown Business',
+              customerName: 'Customer', // Will be enhanced later with actual customer lookup
+              merchantId: t.merchant_id,
+              customerId: t.customer_id,
+              cashbackPercentage: parseFloat(t.cashback_percentage)
+            }
           })),
           pagination: {
             page: parseInt(page),
