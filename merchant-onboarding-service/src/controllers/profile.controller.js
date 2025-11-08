@@ -2,6 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import { z } from 'zod';
 import { ApiError } from '../middleware/error.js';
 import { MerchantProfileModel } from '../models/merchant-profile.model.js';
+import { MerchantApplicationModel } from '../models/merchant-application.model.js';
 import { uploadImageToFirebase, deleteImageFromFirebase } from '../services/firebase-storage.service.js';
 import { uploadSingleImage, validateImageFile } from '../middleware/upload.middleware.js';
 
@@ -36,14 +37,57 @@ export async function getMerchantProfile(req, res, next) {
   try {
     const userId = req.user?.id;
     
+    console.log('[GET_PROFILE] Request received:', {
+      userId: userId,
+      userEmail: req.user?.email,
+      userRole: req.user?.role,
+      userIdType: typeof userId
+    });
+    
     if (!userId) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, 'User not authenticated');
     }
 
     const profile = await MerchantProfileModel.getProfileByUserId(userId);
     
+    console.log('[GET_PROFILE] Profile lookup result:', {
+      userId: userId,
+      profileFound: !!profile,
+      profileId: profile?.id,
+      profileUserId: profile?.user_id
+    });
+    
     if (!profile) {
-      throw new ApiError(StatusCodes.NOT_FOUND, 'Merchant profile not found');
+      // Check if user has an application
+      const applications = await MerchantApplicationModel.getApplicationByUserId(userId);
+      
+      console.log('[GET_PROFILE] Application lookup result:', {
+        userId: userId,
+        applicationsFound: applications?.length || 0
+      });
+      
+      if (applications && applications.length > 0) {
+        // Get the most recent application
+        const latestApplication = applications[0];
+        
+        // Return helpful message based on application status
+        const statusMessages = {
+          'pending': 'Your merchant application is pending review. Your profile will be created once approved.',
+          'approved': 'Your application has been approved, but your profile is being created. Please try again in a moment.',
+          'rejected': 'Your merchant application was rejected. Please contact support for more information.'
+        };
+        
+        return res.status(StatusCodes.NOT_FOUND).json({
+          success: false,
+          error: 'Merchant profile not found',
+          message: statusMessages[latestApplication.status] || 'Your merchant application is being processed.',
+          applicationStatus: latestApplication.status,
+          applicationId: latestApplication.id
+        });
+      }
+      
+      // No application found
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Merchant profile not found. Please submit a merchant application first.');
     }
 
     // Get profile with application details

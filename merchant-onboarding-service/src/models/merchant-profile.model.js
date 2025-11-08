@@ -32,10 +32,51 @@ export class MerchantProfileModel {
    */
   static async getProfileByUserId(userId) {
     const pool = getPool();
-    const result = await pool.query(
-      'SELECT * FROM merchant_profiles WHERE user_id = $1',
+    console.log('[DB_QUERY] getProfileByUserId:', {
+      userId: userId,
+      userIdType: typeof userId,
+      query: 'SELECT * FROM merchant_profiles WHERE id = $1'
+    });
+    
+    // Ensure userId is treated as UUID (PostgreSQL will handle string UUIDs)
+    // Try exact match first
+    let result = await pool.query(
+      'SELECT * FROM merchant_profiles WHERE id = $1::uuid',
       [userId]
     );
+    
+    // If no result, try without explicit cast (in case of type mismatch)
+    if (result.rows.length === 0) {
+      console.log('[DB_QUERY] No result with UUID cast, trying without cast');
+      result = await pool.query(
+        'SELECT * FROM merchant_profiles WHERE id::text = $1',
+        [String(userId)]
+      );
+    }
+    
+    // Debug: Check all profiles to see what user_ids exist (for debugging only)
+    if (result.rows.length === 0) {
+      const allProfiles = await pool.query(
+        'SELECT id, user_id, business_name, email FROM merchant_profiles LIMIT 10'
+      );
+      console.log('[DB_QUERY] Sample profiles in DB:', {
+        totalChecked: allProfiles.rows.length,
+        sampleUserIds: allProfiles.rows.map(r => ({
+          profileId: r.id,
+          userId: r.user_id,
+          userIdType: typeof r.user_id,
+          businessName: r.business_name,
+          email: r.email
+        }))
+      });
+    }
+    
+    console.log('[DB_QUERY] getProfileByUserId result:', {
+      userId: userId,
+      rowsFound: result.rows.length,
+      profileIds: result.rows.map(r => ({ id: r.id, user_id: r.user_id }))
+    });
+    
     return result.rows[0] || null;
   }
 

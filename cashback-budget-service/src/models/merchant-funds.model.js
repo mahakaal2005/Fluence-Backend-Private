@@ -24,7 +24,7 @@ export class MerchantFundsModel {
     // Create new funds record if doesn't exist
     result = await pool.query(
       `INSERT INTO merchant_budgets (merchant_id, current_balance, total_loaded, currency, cashback_percentage, status)
-       VALUES ($1, 0.00, 0.00, 'AED', 5.00, 'active')
+       VALUES ($1, 0.00, 0.00, 'AED', 100.00, 'active')
        RETURNING *`,
       [merchantId]
     );
