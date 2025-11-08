@@ -1074,137 +1074,7 @@ export class SocialController {
         }
       }
 
-      res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
-      // For web apps, show a nice HTML success page
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const username = connectedAccount.username || 'your account';
-      
-      const successHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Connected Successfully</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            max-width: 500px;
-            width: 100%;
-            text-align: center;
-            animation: slideUp 0.5s ease-out;
-        }
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        .success-icon {
-            width: 80px;
-            height: 80px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 30px;
-            animation: scaleIn 0.5s ease-out 0.2s both;
-        }
-        @keyframes scaleIn {
-            from {
-                transform: scale(0);
-            }
-            to {
-                transform: scale(1);
-            }
-        }
-        .success-icon::after {
-            content: '✓';
-            color: white;
-            font-size: 48px;
-            font-weight: bold;
-        }
-        h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 15px;
-            font-weight: 600;
-        }
-        p {
-            color: #666;
-            font-size: 16px;
-            line-height: 1.6;
-            margin-bottom: 30px;
-        }
-        .username {
-            color: #667eea;
-            font-weight: 600;
-        }
-        .button {
-            display: inline-block;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 14px 32px;
-            border-radius: 50px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 16px;
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-        }
-        .button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
-        }
-        .button:active {
-            transform: translateY(0);
-        }
-        .info {
-            margin-top: 30px;
-            padding-top: 30px;
-            border-top: 1px solid #eee;
-            font-size: 14px;
-            color: #999;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="success-icon"></div>
-        <h1>Instagram Connected Successfully!</h1>
-        <p>
-            Your Instagram account <span class="username">@${username}</span> has been successfully connected to your account.
-        </p>
-        <div class="info">
-            You can close this window and return to the app.
-        </div>
-    </div>
-</body>
-</html>`;
-
-      return res.status(StatusCodes.OK).send(successHtml);
+      return res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
     } catch (error) {
       console.error('Instagram callback error:', error);
 
@@ -1215,9 +1085,6 @@ export class SocialController {
         !redirectUri.startsWith('http://') &&
         !redirectUri.startsWith('https://') &&
         redirectUri.includes('://');
-      const isDeepLink = redirectUri && 
-        !redirectUri.startsWith('http://') && 
-        redirectUri.startsWith('https://')
 
       if (isDeepLink) {
         // For mobile apps, return JSON error response
