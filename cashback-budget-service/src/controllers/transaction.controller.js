@@ -17,17 +17,51 @@ export class TransactionController {
         });
       }
 
-      const { amount, type, campaignId, customerId, description, metadata } = req.body;
+      const { amount, type, merchantId, campaignId, customerId, description, metadata } = req.body;
 
       if (type !== 'cashback') {
         throw new Error('Only cashback transactions are supported');
       }
 
-      // Get campaign to derive merchant and percentage
+      if (!merchantId) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'merchantId is required' 
+        });
+      }
+
+      // Get campaign - use provided campaignId or find active campaign for merchant
       const { CampaignModel } = await import('../models/campaign.model.js');
-      const campaign = await CampaignModel.getCampaignById(campaignId);
-      if (!campaign) {
-        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      let campaign = null;
+
+      if (campaignId) {
+        // If campaignId is provided, use it
+        campaign = await CampaignModel.getCampaignById(campaignId);
+        if (!campaign) {
+          return res.status(404).json({ 
+            success: false, 
+            error: 'Campaign not found' 
+          });
+        }
+        // Verify campaign belongs to the merchant
+        if (campaign.merchant_id !== merchantId) {
+          return res.status(400).json({ 
+            success: false, 
+            error: 'Campaign does not belong to the specified merchant' 
+          });
+        }
+      } else {
+        // If no campaignId provided, find active campaign for merchant
+        const activeCampaigns = await CampaignModel.getActiveCampaignsByMerchantId(merchantId);
+        if (activeCampaigns.length === 0) {
+          return res.status(404).json({ 
+            success: false, 
+            error: 'No active campaign found for this merchant' 
+          });
+        }
+        // Use the first (most recent) active campaign
+        campaign = activeCampaigns[0];
+        console.log(`[TRANSACTION] Using active campaign ${campaign.id} for merchant ${merchantId}`);
       }
 
       // Get merchant name for notification (optional)
@@ -38,7 +72,7 @@ export class TransactionController {
         const merchantBase = config.services.merchant;
         
         // Try to get merchant info (optional - don't fail if this fails)
-        const merchantResponse = await fetch(`${merchantBase}/api/merchants/${campaign.merchant_id}`, {
+        const merchantResponse = await fetch(`${merchantBase}/api/profiles/${merchantId}`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json'
@@ -47,7 +81,7 @@ export class TransactionController {
         
         if (merchantResponse.ok) {
           const merchantData = await merchantResponse.json();
-          merchantName = merchantData?.data?.businessName || merchantData?.data?.name || null;
+          merchantName = merchantData?.data?.businessName || merchantData?.data?.business_name || merchantData?.data?.name || null;
         }
       } catch (merchantErr) {
         // Ignore errors when fetching merchant info - it's optional
@@ -59,8 +93,8 @@ export class TransactionController {
       const originalTransactionId = req.body.originalTransactionId || randomUUID();
 
       const transaction = await TransactionModel.createTransaction({
-        merchantId: campaign.merchant_id,
-        campaignId,
+        merchantId: merchantId, // Use merchantId from request
+        campaignId: campaign.id, // Use the campaign ID (either provided or found)
         customerId,
         originalTransactionId,
         cashbackAmount: amount,
@@ -74,7 +108,7 @@ export class TransactionController {
           transaction.id,
           amount,
           merchantName,
-          description || campaign.name || 'Cashback transaction'
+          description || campaign.campaign_name || 'Cashback transaction'
         );
       } catch (notificationErr) {
         // Do not block transaction creation if notification fails

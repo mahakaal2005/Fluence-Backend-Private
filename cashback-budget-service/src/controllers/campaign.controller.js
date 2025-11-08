@@ -16,8 +16,77 @@ export class CampaignController {
         });
       }
 
+      // Get the budget first and use its merchant_id to ensure consistency
+      const { BudgetModel } = await import('../models/budget.model.js');
+      let budget = null;
+      let merchantId = null;
+
+      // Priority: 1. Request body budgetId, 2. Request body merchantId, 3. Get budget by user.id, 4. Get merchant profile and then budget
+      if (req.body.budgetId) {
+        // If budgetId is provided, get that specific budget
+        budget = await BudgetModel.getBudgetById(req.body.budgetId);
+        if (budget) {
+          merchantId = budget.merchant_id;
+          console.log(`[CAMPAIGN] Using merchant_id from provided budget: ${merchantId}`);
+        }
+      } else if (req.body.merchantId) {
+        // If merchantId is provided, get budget for that merchant
+        budget = await BudgetModel.getBudgetByMerchantId(req.body.merchantId);
+        if (budget) {
+          merchantId = budget.merchant_id;
+          console.log(`[CAMPAIGN] Using merchant_id from budget: ${merchantId}`);
+        }
+      } else {
+        // Try to find budget by user.id first (most common case)
+        budget = await BudgetModel.getBudgetByMerchantId(req.user.id);
+        if (budget) {
+          merchantId = budget.merchant_id;
+          console.log(`[CAMPAIGN] Found budget with user.id, using merchant_id from budget: ${merchantId}`);
+        } else {
+          // If no budget found with user.id, try to get merchant profile and find budget
+          try {
+            const { getConfig } = await import('../config/index.js');
+            const config = getConfig();
+            const merchantServiceUrl = config.services?.merchant || process.env.MERCHANT_ONBOARDING_SERVICE_URL || 'http://localhost:4003';
+
+            const response = await fetch(`${merchantServiceUrl}/api/profiles/me`, {
+              method: 'GET',
+              headers: {
+                'Authorization': req.headers.authorization || '',
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.data?.id) {
+                const merchantProfileId = data.data.id;
+                budget = await BudgetModel.getBudgetByMerchantId(merchantProfileId);
+                if (budget) {
+                  merchantId = budget.merchant_id;
+                  console.log(`[CAMPAIGN] Found budget with merchant profile ID, using merchant_id from budget: ${merchantId}`);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('[CAMPAIGN] Error fetching merchant profile:', error.message);
+          }
+        }
+      }
+
+      // If still no budget found, return error
+      if (!budget || !merchantId) {
+        return res.status(400).json({
+          success: false,
+          error: 'No budget found for merchant',
+          message: 'Please create a budget before creating a campaign. You can provide budgetId or merchantId in the request body.'
+        });
+      }
+
+      console.log(`[CAMPAIGN] Creating campaign with merchant_id from budget: ${merchantId}`);
+
       const campaign = await CampaignModel.createCampaign({
-        merchantId: req.user.id,
+        merchantId: merchantId,
         campaignName: req.body.name,
         cashbackPercentage: req.body.cashbackPercentage,
         startDate: req.body.startDate,

@@ -67,7 +67,8 @@ export class CampaignModel {
        AND status = 'active' 
        AND start_date <= NOW() 
        AND end_date >= NOW()
-       ORDER BY created_at DESC`
+       ORDER BY created_at DESC`,
+      [merchantId]
     );
     return result.rows;
   }

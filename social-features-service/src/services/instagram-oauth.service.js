@@ -459,6 +459,312 @@ export class InstagramOAuthService {
   }
 
   /**
+   * Extract Instagram mentions from post caption
+   * @param {string} caption - Post caption
+   * @returns {Array<string>} Array of Instagram usernames (without @)
+   */
+  static extractMentions(caption) {
+    if (!caption) return [];
+    // Match @mentions in Instagram format
+    const mentionRegex = /@([a-zA-Z0-9._]+)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(caption)) !== null) {
+      mentions.push(match[1].toLowerCase());
+    }
+    return [...new Set(mentions)]; // Remove duplicates
+  }
+
+  /**
+   * Find and link post to transaction based on merchant tag
+   * @param {string} userId - User ID
+   * @param {string} postId - Post ID
+   * @param {Array<string>} mentions - Array of Instagram usernames
+   * @param {Date} publishedAt - Post published timestamp
+   * @returns {Promise<string|null>} Transaction ID if linked, null otherwise
+   */
+  static async autoLinkPostToTransaction(userId, postId, mentions, publishedAt, authToken = null) {
+    if (!mentions || mentions.length === 0) {
+      console.log(`[AUTO-LINK] No mentions found in post ${postId}`);
+      return null;
+    }
+
+    const pool = getPool();
+    
+    try {
+      console.log(`[AUTO-LINK] Starting auto-link for post ${postId}`);
+      console.log(`[AUTO-LINK] User ID: ${userId}, Mentions: ${mentions.join(', ')}, Published: ${publishedAt}`);
+      
+      // Get merchant service URL from config
+      const { getConfig } = await import('../config/index.js');
+      const config = getConfig();
+      const merchantServiceUrl = config.services?.merchant || process.env.MERCHANT_ONBOARDING_SERVICE_URL || 'http://localhost:4003';
+      
+      console.log(`[AUTO-LINK] Using merchant service URL: ${merchantServiceUrl}`);
+
+      // Find merchants by instagram_id
+      const merchantIds = [];
+      for (const mention of mentions) {
+        try {
+          console.log(`[AUTO-LINK] Looking up merchant for @${mention}`);
+          
+          // This is a public endpoint - do NOT include auth token to avoid admin checks
+          const merchantResponse = await fetch(
+            `${merchantServiceUrl}/api/profiles/by-instagram/${encodeURIComponent(mention)}`,
+            {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            }
+          );
+          
+          if (merchantResponse.ok) {
+            const merchantData = await merchantResponse.json();
+            if (merchantData.success && merchantData.data?.id) {
+              console.log(`[AUTO-LINK] Found merchant: ${merchantData.data.id} (${merchantData.data.businessName})`);
+              merchantIds.push(merchantData.data.id);
+            } else {
+              console.log(`[AUTO-LINK] Merchant response OK but no data for @${mention}`);
+            }
+          } else {
+            const errorText = await merchantResponse.text();
+            console.log(`[AUTO-LINK] Merchant lookup failed for @${mention}: ${merchantResponse.status} - ${errorText}`);
+          }
+        } catch (err) {
+          console.error(`[AUTO-LINK] Error fetching merchant for @${mention}:`, err.message);
+        }
+      }
+
+      if (merchantIds.length === 0) {
+        console.log(`[AUTO-LINK] No merchants found for mentions: ${mentions.join(', ')}`);
+        return null;
+      }
+
+      // Check if post is within last 24 hours
+      const now = new Date();
+      const postAge = now.getTime() - publishedAt.getTime();
+      const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+      
+      if (postAge > twentyFourHours) {
+        console.log(`[AUTO-LINK] Post ${postId} is older than 24 hours (${Math.round(postAge / (60 * 60 * 1000))} hours old), skipping auto-link`);
+        return null;
+      }
+
+      // Find pending cashback transactions for these merchants and user
+      // Look for transactions created in the last 24 hours (within 24h window from now)
+      const timeWindowStart = new Date(now);
+      timeWindowStart.setHours(timeWindowStart.getHours() - 24);
+
+      console.log(`[AUTO-LINK] Post is within 24 hours. Searching for transactions created in last 24 hours (between ${timeWindowStart.toISOString()} and ${now.toISOString()})`);
+
+      // Try to query cashback_transactions directly if in same database
+      // Otherwise, we'll need to query points_transactions by reference_id
+      let matchingTransactionId = null;
+      
+      try {
+        // First, try to find cashback transactions directly (if in same DB)
+        // Look for transactions created in the last 24 hours for these merchants
+        console.log(`[AUTO-LINK] Searching cashback_transactions with:`);
+        console.log(`[AUTO-LINK]   - merchant_ids: ${merchantIds.join(', ')}`);
+        console.log(`[AUTO-LINK]   - status: pending`);
+        console.log(`[AUTO-LINK]   - time window: ${timeWindowStart.toISOString()} to ${now.toISOString()}`);
+        console.log(`[AUTO-LINK]   - Note: Filtering by merchant_id only (not customer_id)`);
+        
+        const cashbackQuery = `
+          SELECT ct.id, ct.created_at, ct.merchant_id, ct.status, ct.customer_id
+          FROM cashback_transactions ct
+          WHERE ct.merchant_id = ANY($1::uuid[])
+            AND ct.status = 'pending'
+            AND ct.created_at >= $2
+            AND ct.created_at <= $3
+          ORDER BY ct.created_at DESC
+          LIMIT 10
+        `;
+        
+        const cashbackResult = await pool.query(cashbackQuery, [
+          merchantIds,
+          timeWindowStart, // 24 hours ago
+          now // Current time
+        ]);
+
+        console.log(`[AUTO-LINK] Cashback query returned ${cashbackResult.rows.length} transaction(s)`);
+        if (cashbackResult.rows.length > 0) {
+          console.log(`[AUTO-LINK] Transaction details:`, cashbackResult.rows.map(r => ({
+            id: r.id,
+            merchant_id: r.merchant_id,
+            customer_id: r.customer_id,
+            status: r.status,
+            created_at: r.created_at
+          })));
+          matchingTransactionId = cashbackResult.rows[0].id;
+          console.log(`[AUTO-LINK] ✅ Found cashback transaction: ${matchingTransactionId}`);
+        } else {
+          // Debug: Check if there are any transactions for this merchant without time/status filters
+          const debugQuery = `
+            SELECT COUNT(*) as count, 
+                   MIN(created_at) as earliest, 
+                   MAX(created_at) as latest,
+                   array_agg(DISTINCT status) as statuses,
+                   array_agg(DISTINCT customer_id) as customer_ids
+            FROM cashback_transactions
+            WHERE merchant_id = ANY($1::uuid[])
+          `;
+          const debugResult = await pool.query(debugQuery, [merchantIds]);
+          if (debugResult.rows[0].count > 0) {
+            console.log(`[AUTO-LINK] ⚠️ Found ${debugResult.rows[0].count} transaction(s) for merchant(s), but none match filters:`);
+            console.log(`[AUTO-LINK]   - Earliest: ${debugResult.rows[0].earliest}`);
+            console.log(`[AUTO-LINK]   - Latest: ${debugResult.rows[0].latest}`);
+            console.log(`[AUTO-LINK]   - Statuses: ${debugResult.rows[0].statuses.join(', ')}`);
+            console.log(`[AUTO-LINK]   - Customer IDs: ${debugResult.rows[0].customer_ids.slice(0, 5).join(', ')}${debugResult.rows[0].customer_ids.length > 5 ? '...' : ''}`);
+            console.log(`[AUTO-LINK]   - Time window needed: ${timeWindowStart.toISOString()} to ${now.toISOString()}`);
+          } else {
+            console.log(`[AUTO-LINK] ⚠️ No transactions found for merchant_ids=[${merchantIds.join(', ')}]`);
+          }
+          console.log(`[AUTO-LINK] No cashback transactions found matching all criteria, trying points_transactions...`);
+          
+          // If no cashback transaction found, try to find via points_transactions
+          // Points transactions have reference_id that should match cashback transaction ID
+          // We need to find points transactions for this user that need social posts (created in last 24 hours)
+          console.log(`[AUTO-LINK] Searching points_transactions for user ${userId}...`);
+          const pointsQuery = `
+            SELECT pt.reference_id, pt.created_at, pt.id as points_transaction_id
+            FROM points_transactions pt
+            WHERE pt.user_id = $1
+              AND pt.social_post_required = true
+              AND pt.social_post_made = false
+              AND pt.status = 'pending'
+              AND pt.created_at >= $2
+              AND pt.created_at <= $3
+            ORDER BY pt.created_at DESC
+            LIMIT 10
+          `;
+          
+          const pointsResult = await pool.query(pointsQuery, [
+            userId,
+            timeWindowStart, // 24 hours ago
+            now // Current time
+          ]);
+
+          console.log(`[AUTO-LINK] Points query returned ${pointsResult.rows.length} transaction(s)`);
+          if (pointsResult.rows.length > 0) {
+            console.log(`[AUTO-LINK] Points transactions found:`, pointsResult.rows.map(r => ({
+              points_id: r.points_transaction_id,
+              reference_id: r.reference_id,
+              created_at: r.created_at
+            })));
+            
+            // For each reference_id, check if it's a cashback transaction for one of our merchants
+            for (const ptRow of pointsResult.rows) {
+              if (ptRow.reference_id) {
+                console.log(`[AUTO-LINK] Verifying reference_id ${ptRow.reference_id} against merchant_ids [${merchantIds.join(', ')}]`);
+                // Try to verify this is a cashback transaction for one of our merchants
+                const verifyQuery = `
+                  SELECT id, merchant_id, customer_id, status, created_at 
+                  FROM cashback_transactions
+                  WHERE id = $1 AND merchant_id = ANY($2::uuid[])
+                `;
+                const verifyResult = await pool.query(verifyQuery, [ptRow.reference_id, merchantIds]);
+                
+                if (verifyResult.rows.length > 0) {
+                  console.log(`[AUTO-LINK] ✅ Verified transaction ${ptRow.reference_id} belongs to merchant ${verifyResult.rows[0].merchant_id}`);
+                  matchingTransactionId = ptRow.reference_id;
+                  console.log(`[AUTO-LINK] ✅ Found transaction via points_transactions: ${matchingTransactionId}`);
+                  break;
+                } else {
+                  console.log(`[AUTO-LINK] ❌ Reference ${ptRow.reference_id} does not match any of the merchant_ids`);
+                }
+              }
+            }
+            
+            if (!matchingTransactionId) {
+              console.log(`[AUTO-LINK] ⚠️ Found ${pointsResult.rows.length} points transaction(s) but none matched the merchant_ids`);
+            }
+          } else {
+            console.log(`[AUTO-LINK] ⚠️ No points transactions found for user ${userId} in the last 24 hours`);
+          }
+        }
+      } catch (dbError) {
+        console.error(`[AUTO-LINK] Database query error:`, dbError.message);
+        // If direct DB query fails, might be in different database - try API approach
+        console.log(`[AUTO-LINK] Falling back to API approach...`);
+        
+        // Fallback: Query points_transactions by user and check reference_id
+        // This assumes points_transactions is in the same DB as social_posts
+        try {
+          const fallbackQuery = `
+            SELECT reference_id, created_at
+            FROM points_transactions
+            WHERE user_id = $1
+              AND social_post_required = true
+              AND social_post_made = false
+              AND status = 'pending'
+              AND created_at >= $2
+              AND created_at <= $3
+            ORDER BY created_at DESC
+            LIMIT 5
+          `;
+          
+          const fallbackResult = await pool.query(fallbackQuery, [
+            userId,
+            timeWindowStart, // 24 hours ago
+            now // Current time
+          ]);
+
+          if (fallbackResult.rows.length > 0) {
+            // Use the most recent one (we can't verify merchant without API call, but this is better than nothing)
+            matchingTransactionId = fallbackResult.rows[0].reference_id;
+            console.log(`[AUTO-LINK] Using fallback transaction: ${matchingTransactionId}`);
+          }
+        } catch (fallbackError) {
+          console.error(`[AUTO-LINK] Fallback query also failed:`, fallbackError.message);
+        }
+      }
+
+      // If we found a matching transaction, link it
+      if (matchingTransactionId) {
+        console.log(`[AUTO-LINK] Linking post ${postId} to transaction ${matchingTransactionId}`);
+        
+        // Update post with transaction ID
+        await pool.query(
+          `UPDATE social_posts 
+           SET original_transaction_id = $1, status = 'pending_review', updated_at = NOW()
+           WHERE id = $2`,
+          [matchingTransactionId, postId]
+        );
+
+        // Update points_transactions to mark social_post_made
+        try {
+          const pointsUpdateResult = await pool.query(
+            `UPDATE points_transactions 
+             SET social_post_made = true, updated_at = NOW()
+             WHERE reference_id = $1 AND social_post_made = false`,
+            [matchingTransactionId.toString()]
+          );
+          
+          if (pointsUpdateResult.rowCount > 0) {
+            console.log(`[AUTO-LINK] Updated ${pointsUpdateResult.rowCount} point transaction(s) to set social_post_made = true`);
+          } else {
+            console.log(`[AUTO-LINK] No points transactions updated (may already be marked or not found)`);
+          }
+        } catch (err) {
+          console.error(`[AUTO-LINK] Error updating points transaction:`, err.message);
+          // Don't fail the sync if this fails
+        }
+
+        console.log(`[AUTO-LINK] ✅ Successfully auto-linked post ${postId} to transaction ${matchingTransactionId}`);
+        return matchingTransactionId;
+      } else {
+        console.log(`[AUTO-LINK] ❌ No matching transaction found for post ${postId}`);
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`[AUTO-LINK] ❌ Error in autoLinkPostToTransaction:`, error);
+      console.error(`[AUTO-LINK] Error stack:`, error.stack);
+      return null; // Don't fail the sync if auto-linking fails
+    }
+  }
+
+  /**
    * Sync Instagram posts to database
    * Fetches posts from Instagram and saves/updates them in the database
    * @param {string} userId - User ID
@@ -467,7 +773,7 @@ export class InstagramOAuthService {
    * @param {number} maxPosts - Maximum number of posts to sync (default: 100)
    * @returns {Promise<Object>} Sync result with counts
    */
-  static async syncInstagramPosts(userId, socialAccountId, accessToken, maxPosts = 100) {
+  static async syncInstagramPosts(userId, socialAccountId, accessToken, maxPosts = 100, authToken = null) {
     try {
       const pool = getPool();
       
@@ -477,6 +783,7 @@ export class InstagramOAuthService {
       let created = 0;
       let updated = 0;
       let skipped = 0;
+      let autoLinked = 0;
 
       for (const item of media) {
         // Determine post type based on media type
@@ -499,13 +806,36 @@ export class InstagramOAuthService {
         // Parse timestamp
         const publishedAt = item.timestamp ? new Date(item.timestamp) : new Date();
 
+        // Check if post is within last 24 hours (only process recent posts for auto-linking)
+        const now = new Date();
+        const postAge = now.getTime() - publishedAt.getTime();
+        const twentyFourHours = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        const isRecentPost = postAge <= twentyFourHours;
+
+        // Extract mentions from caption
+        const mentions = this.extractMentions(item.caption);
+        console.log(`[SYNC] Post ${item.id}: Caption="${item.caption?.substring(0, 100)}...", Mentions=[${mentions.join(', ')}], Published: ${publishedAt.toISOString()}, Age: ${Math.round(postAge / (60 * 60 * 1000))} hours, Recent: ${isRecentPost}`);
+
+        // Only process posts that have @fluencepay tagged
+        const captionLower = (item.caption || '').toLowerCase();
+        const hasFluencePayTag = captionLower.includes('@fluencepay');
+        
+        if (!hasFluencePayTag) {
+          console.log(`[SYNC] Post ${item.id} skipped: No @fluencepay tag found`);
+          skipped++;
+          continue; // Skip this post
+        }
+
         // Check if post already exists
         const existingPost = await pool.query(
-          'SELECT id FROM social_posts WHERE social_account_id = $1 AND platform_post_id = $2',
+          'SELECT id, original_transaction_id FROM social_posts WHERE social_account_id = $1 AND platform_post_id = $2',
           [socialAccountId, item.id]
         );
 
         if (existingPost.rows.length > 0) {
+          const postId = existingPost.rows[0].id;
+          const existingTransactionId = existingPost.rows[0].original_transaction_id;
+
           // Update existing post
           await pool.query(
             `UPDATE social_posts 
@@ -520,17 +850,34 @@ export class InstagramOAuthService {
               item.likeCount,
               item.commentsCount,
               publishedAt,
-              existingPost.rows[0].id
+              postId
             ]
           );
+
+          // Try to auto-link if not already linked and post is within last 24 hours
+          if (!existingTransactionId && mentions.length > 0 && isRecentPost) {
+            const linkedTransactionId = await this.autoLinkPostToTransaction(
+              userId,
+              postId,
+              mentions,
+              publishedAt,
+              authToken
+            );
+            if (linkedTransactionId) {
+              autoLinked++;
+            }
+          } else if (!isRecentPost && mentions.length > 0) {
+            console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
+          }
+
           updated++;
         } else {
-          // Create new post
-          await pool.query(
+          // Create new post with pending_review status
+          const newPost = await pool.query(
             `INSERT INTO social_posts (
               user_id, social_account_id, platform_post_id, content, media_urls,
               post_type, status, published_at, likes_count, comments_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
             [
               userId,
               socialAccountId,
@@ -538,12 +885,31 @@ export class InstagramOAuthService {
               item.caption,
               mediaUrls,
               postType,
-              'published', // Posts from Instagram are already published
+              'pending_review', // New posts from Instagram need admin review
               publishedAt,
               item.likeCount,
               item.commentsCount
             ]
           );
+
+          const postId = newPost.rows[0].id;
+
+          // Try to auto-link based on merchant tags (only for posts in last 24 hours)
+          if (mentions.length > 0 && isRecentPost) {
+            const linkedTransactionId = await this.autoLinkPostToTransaction(
+              userId,
+              postId,
+              mentions,
+              publishedAt,
+              authToken
+            );
+            if (linkedTransactionId) {
+              autoLinked++;
+            }
+          } else if (!isRecentPost && mentions.length > 0) {
+            console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
+          }
+
           created++;
         }
       }
@@ -558,7 +924,8 @@ export class InstagramOAuthService {
         total: media.length,
         created,
         updated,
-        skipped
+        skipped,
+        autoLinked
       };
     } catch (error) {
       console.error('Error syncing Instagram posts:', error);
@@ -569,4 +936,5 @@ export class InstagramOAuthService {
     }
   }
 }
+
 
