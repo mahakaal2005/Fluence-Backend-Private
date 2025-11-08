@@ -4,9 +4,14 @@
     "type": "module",
     "description": "Utility scripts for Fluence backend",
     "scripts": {
-        "seed": "node seed-merchant-data.js"
+        "seed": "node seed-merchant-data.js",
+        "create-admin": "node create-admin.js",
+        "clear-transactions": "node clear-all-transactions.js",
+        "seed-transactions": "node seed-transactions.js"
     },
     "dependencies": {
-        "pg": "^8.11.3"
+        "pg": "^8.11.3",
+        "firebase-admin": "^12.0.0",
+        "dotenv": "^16.0.3"
     }
 }

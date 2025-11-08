@@ -318,6 +318,121 @@ export class ContentController {
   }
 
   /**
+   * Update FAQ content (admin only)
+   */
+  static async updateFAQContent(req, res, next) {
+    try {
+      const { faqId } = req.params;
+      const { question, answer, category, tags } = req.body;
+      const pool = getPool();
+      
+      // Check if FAQ exists
+      const existingFAQ = await pool.query(
+        'SELECT id FROM faq_content WHERE id = $1',
+        [faqId]
+      );
+      
+      if (existingFAQ.rows.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'FAQ not found');
+      }
+      
+      // Build dynamic update query based on provided fields
+      const updateFields = [];
+      const params = [faqId];
+      let paramCount = 1;
+      
+      if (question !== undefined) {
+        paramCount++;
+        updateFields.push(`question = $${paramCount}`);
+        params.push(question);
+      }
+      
+      if (answer !== undefined) {
+        paramCount++;
+        updateFields.push(`answer = $${paramCount}`);
+        params.push(answer);
+      }
+      
+      if (category !== undefined) {
+        paramCount++;
+        updateFields.push(`category = $${paramCount}`);
+        params.push(category);
+      }
+      
+      if (tags !== undefined) {
+        paramCount++;
+        updateFields.push(`tags = $${paramCount}`);
+        params.push(tags);
+      }
+      
+      // Always update the updated_at timestamp
+      updateFields.push('updated_at = NOW()');
+      
+      if (updateFields.length === 1) {
+        // Only updated_at would be updated, no actual changes
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'No fields provided for update');
+      }
+      
+      const updateQuery = `
+        UPDATE faq_content 
+        SET ${updateFields.join(', ')}
+        WHERE id = $1
+        RETURNING *
+      `;
+      
+      const updatedFAQ = await pool.query(updateQuery, params);
+      
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: updatedFAQ.rows[0],
+        message: 'FAQ updated successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Delete FAQ content (admin only)
+   * Uses soft delete by setting is_active to false
+   */
+  static async deleteFAQContent(req, res, next) {
+    try {
+      const { faqId } = req.params;
+      const pool = getPool();
+      
+      // Check if FAQ exists
+      const existingFAQ = await pool.query(
+        'SELECT id, is_active FROM faq_content WHERE id = $1',
+        [faqId]
+      );
+      
+      if (existingFAQ.rows.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'FAQ not found');
+      }
+      
+      if (!existingFAQ.rows[0].is_active) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'FAQ is already deleted');
+      }
+      
+      // Soft delete: set is_active to false
+      await pool.query(
+        `UPDATE faq_content 
+         SET is_active = false, updated_at = NOW()
+         WHERE id = $1`,
+        [faqId]
+      );
+      
+      res.status(StatusCodes.OK).json({
+        success: true,
+        message: 'FAQ deleted successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Create or update Terms & Conditions (admin only)
    */
   static async createTermsAndConditions(req, res, next) {

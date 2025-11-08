@@ -267,4 +267,77 @@ export class NotificationController {
       next(error);
     }
   }
+
+  /**
+   * Internal endpoint for admin notification when new post is created
+   */
+  static async createAdminNewPostNotification(req, res, next) {
+    try {
+      const { postData, sentBy } = req.body;
+
+      if (!postData || !postData.postId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'postData with postId is required');
+      }
+
+      const notifications = await NotificationService.sendAdminNewPostNotification(postData, sentBy);
+
+      res.status(StatusCodes.CREATED).json({
+        success: true,
+        message: `Admin notification sent to ${notifications.length} admin(s)`,
+        data: { count: notifications.length, notifications }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Internal endpoint for admin notification when new merchant application is submitted
+   */
+  static async createAdminNewMerchantApplicationNotification(req, res, next) {
+    try {
+      const { applicationData, sentBy } = req.body;
+
+      if (!applicationData || !applicationData.applicationId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'applicationData with applicationId is required');
+      }
+
+      const notifications = await NotificationService.sendAdminNewMerchantApplicationNotification(applicationData, sentBy);
+
+      res.status(StatusCodes.CREATED).json({
+        success: true,
+        message: `Admin notification sent to ${notifications.length} admin(s)`,
+        data: { count: notifications.length, notifications }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get sent notifications with read statistics
+   * For admins to see notifications they sent and how many users read them
+   */
+  static async getSentNotificationsWithStats(req, res, next) {
+    try {
+      const limit = parseInt(req.query.limit) || 50;
+      const offset = parseInt(req.query.offset) || 0;
+
+      const notifications = await NotificationService.getSentNotificationsWithStats(limit, offset);
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          notifications,
+          pagination: {
+            limit,
+            offset,
+            count: notifications.length
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

@@ -28,6 +28,18 @@ const createFAQValidation = [
   body('tags').optional().isArray().withMessage('Tags must be an array')
 ];
 
+const updateFAQValidation = [
+  param('faqId').isUUID().withMessage('Invalid FAQ ID'),
+  body('question').optional().notEmpty().withMessage('Question cannot be empty'),
+  body('answer').optional().notEmpty().withMessage('Answer cannot be empty'),
+  body('category').optional().notEmpty().withMessage('Category cannot be empty'),
+  body('tags').optional().isArray().withMessage('Tags must be an array')
+];
+
+const faqIdValidation = [
+  param('faqId').isUUID().withMessage('Invalid FAQ ID')
+];
+
 const createTermsValidation = [
   body('title').notEmpty().withMessage('Title is required'),
   body('content').notEmpty().withMessage('Content is required'),
@@ -79,6 +91,8 @@ router.use(verifyAuthToken());
 // Admin content management
 router.post('/help', createHelpValidation, ContentController.createHelpContent);
 router.post('/faq', createFAQValidation, ContentController.createFAQContent);
+router.put('/faq/:faqId', updateFAQValidation, ContentController.updateFAQContent);
+router.delete('/faq/:faqId', faqIdValidation, ContentController.deleteFAQContent);
 router.post('/terms', createTermsValidation, ContentController.createTermsAndConditions);
 router.post('/privacy', createPrivacyValidation, ContentController.createPrivacyPolicy);
 
