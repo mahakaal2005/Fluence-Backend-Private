@@ -16,9 +16,9 @@ function createPool() {
     user: process.env.NOTIFICATION_DB_USER || 'bp-user',
     password: process.env.NOTIFICATION_DB_PASSWORD || 'k?b0fY3ZB!lB6lJiB*7EqaK',
     ssl: process.env.NOTIFICATION_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    max: parseInt(process.env.NOTIFICATION_DB_MAX_CONNECTIONS || '20'),
+    max: parseInt(process.env.NOTIFICATION_DB_MAX_CONNECTIONS || '10'),
     idleTimeoutMillis: parseInt(process.env.NOTIFICATION_DB_IDLE_TIMEOUT || '30000'),
-    connectionTimeoutMillis: parseInt(process.env.NOTIFICATION_DB_CONNECTION_TIMEOUT || '2000'),
+    connectionTimeoutMillis: parseInt(process.env.NOTIFICATION_DB_CONNECTION_TIMEOUT || '15000'),
   };
 
   pool = new Pool(config);
