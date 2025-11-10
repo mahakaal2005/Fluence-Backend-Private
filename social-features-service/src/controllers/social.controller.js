@@ -1207,19 +1207,19 @@ export class SocialController {
         userId
       );
 
-      // Update fluence score: Add 75 points for connecting Instagram account
+      // Update fluence score: Set to 75 for connecting Instagram account
       try {
         const pool = getPool();
-        // Try to update fluence_score, using COALESCE to handle NULL values
+        // Try to update fluence_score to 75
         // If column doesn't exist, this will fail gracefully
         await pool.query(
           `UPDATE users 
-           SET fluence_score = COALESCE(fluence_score, 0) + 75, 
+           SET fluence_score = 75, 
                updated_at = NOW() 
            WHERE id = $1`,
           [userId]
         );
-        console.log(`✅ Added 75 fluence score to user ${userId} for Instagram connection`);
+        console.log(`✅ Set fluence score to 75 for user ${userId} for Instagram connection`);
       } catch (scoreError) {
         // Log error but don't fail the connection if fluence_score column doesn't exist
         console.warn('⚠️ Failed to update fluence score (column may not exist):', scoreError.message);
