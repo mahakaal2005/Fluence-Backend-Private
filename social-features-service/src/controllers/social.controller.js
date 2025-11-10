@@ -1012,7 +1012,6 @@ export class SocialController {
         <div class="success-message">
             ✓ Your Instagram account is now linked and ready to use.
         </div>
-        <a href="${frontendUrl}" class="button">Continue to App</a>
         <div class="info">
             You can close this window and return to the app.
         </div>
