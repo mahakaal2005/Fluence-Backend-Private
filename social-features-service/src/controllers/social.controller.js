@@ -849,6 +849,178 @@ export class SocialController {
       return 'http://localhost:3000';
     };
 
+    // Helper function to generate success HTML
+    const getSuccessHtml = (accountData) => {
+      const frontendUrl = getFrontendUrl();
+      const username = accountData?.username || 'your account';
+      return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Connected Successfully</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease-out 0.2s both;
+        }
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+        .success-icon::after {
+            content: '✓';
+            color: white;
+            font-size: 48px;
+            font-weight: bold;
+        }
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .success-message {
+            background: #f0fff4;
+            border-left: 4px solid #48bb78;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            color: #22543d;
+            font-size: 14px;
+            text-align: left;
+        }
+        .account-info {
+            background: #f7fafc;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .account-info strong {
+            color: #2d3748;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .account-info span {
+            color: #4a5568;
+            font-size: 14px;
+        }
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(131, 58, 180, 0.4);
+            margin-top: 10px;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(131, 58, 180, 0.5);
+        }
+        .button:active {
+            transform: translateY(0);
+        }
+        .info {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #999;
+        }
+        @keyframes checkmark {
+            0% {
+                transform: scale(0) rotate(45deg);
+            }
+            50% {
+                transform: scale(1.2) rotate(45deg);
+            }
+            100% {
+                transform: scale(1) rotate(45deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon"></div>
+        <h1>Instagram Connected!</h1>
+        <p>
+            Your Instagram account has been successfully connected.
+        </p>
+        <div class="account-info">
+            <strong>Connected Account:</strong>
+            <span>@${username}</span>
+        </div>
+        <div class="success-message">
+            ✓ Your Instagram account is now linked and ready to use.
+        </div>
+        <a href="${frontendUrl}" class="button">Continue to App</a>
+        <div class="info">
+            You can close this window and return to the app.
+        </div>
+    </div>
+</body>
+</html>`;
+    };
+
     // Helper function to generate error HTML
     const getErrorHtml = (errorMessage) => {
       const frontendUrl = getFrontendUrl();
@@ -1036,45 +1208,8 @@ export class SocialController {
         userId
       );
 
-      // Check if this is a mobile app callback (deep link) or web callback
-      // Deep links use custom URL schemes (e.g., myapp://, fluence://)
-      // Web URLs use http:// or https://
-      const isDeepLink = redirectUri &&
-        !redirectUri.startsWith('http://') &&
-        !redirectUri.startsWith('https://') &&
-        redirectUri.includes('://');
-
-      if (isDeepLink) {
-        // For mobile apps, return JSON response instead of redirecting
-        // The Flutter app will handle the deep link callback
-        return res.status(StatusCodes.OK).json({
-          success: true,
-          data: connectedAccount,
-          message: 'Instagram account connected successfully',
-          deepLink: redirectUri.includes('?')
-            ? `${redirectUri}&success=true&accountId=${connectedAccount.id}`
-            : `${redirectUri}?success=true&accountId=${connectedAccount.id}`
-        });
-      }
-
-      // For web apps, redirect to frontend success page
-      // Use FRONTEND_URL if set, otherwise try to construct from tunnel URL or use localhost
-      let frontendUrl = process.env.FRONTEND_URL;
-
-      if (!frontendUrl) {
-        // If we're behind a tunnel, try to construct frontend URL from the request
-        const host = req.get('host');
-        if (host && (host.includes('trycloudflare.com') || host.includes('cfargotunnel.com'))) {
-          // We're behind a tunnel - frontend might be on the same tunnel or separate
-          // For now, redirect to the same tunnel URL (you can set FRONTEND_URL for separate frontend)
-          frontendUrl = `${req.protocol}://${host}`;
-        } else {
-          // Default to localhost for local development
-          frontendUrl = 'http://localhost:3000';
-        }
-      }
-
-      return res.redirect(`${frontendUrl}/social/instagram/success?accountId=${connectedAccount.id}`);
+      // Display success HTML page for all callbacks (web and mobile)
+      return res.status(StatusCodes.OK).send(getSuccessHtml(connectedAccount));
     } catch (error) {
       console.error('Instagram callback error:', error);
 
