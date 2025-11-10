@@ -25,16 +25,18 @@ initializeDatabase().then(() => {
     console.log(`Auth service listening on port ${port}`);
     console.log(`🌐 Network: Listening on all interfaces (0.0.0.0:${port})`);
 
-    // Initialize background jobs asynchronously after a short delay
-    // This prevents potential SIGSEGV issues with node-cron initialization
-    setImmediate(() => {
-      try {
-        BackgroundJobsService.initialize();
-      } catch (error) {
-        console.error('⚠️  Failed to initialize background jobs:', error.message);
-        console.log('⚠️  Service will continue without background jobs');
-      }
-    });
+    // Temporarily disabled background jobs due to SIGSEGV crash with node-cron
+    // TODO: Fix node-cron issue or replace with alternative scheduling library
+    // Background jobs initialization disabled to prevent service crashes
+    console.log('⚠️  Background jobs disabled temporarily due to node-cron SIGSEGV issue');
+    // setImmediate(() => {
+    //   try {
+    //     BackgroundJobsService.initialize();
+    //   } catch (error) {
+    //     console.error('⚠️  Failed to initialize background jobs:', error.message);
+    //     console.log('⚠️  Service will continue without background jobs');
+    //   }
+    // });
   });
 });
 
@@ -51,7 +53,11 @@ process.on('uncaughtException', (err) => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
-  BackgroundJobsService.stopAllJobs();
+  try {
+    BackgroundJobsService.stopAllJobs();
+  } catch (error) {
+    // Ignore errors if jobs are disabled
+  }
   server.close(() => {
     console.log('Process terminated');
   });
@@ -59,7 +65,11 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
-  BackgroundJobsService.stopAllJobs();
+  try {
+    BackgroundJobsService.stopAllJobs();
+  } catch (error) {
+    // Ignore errors if jobs are disabled
+  }
   server.close(() => {
     console.log('Process terminated');
   });
