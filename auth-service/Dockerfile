@@ -1,10 +1,10 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 # Install dependencies first (use package.json + package-lock.json if present)
 COPY package*.json ./
-RUN npm ci --only=production || npm install --only=production
+RUN npm ci --omit=dev || npm install --omit=dev
 
 # Copy source
 COPY . .

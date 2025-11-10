@@ -25,8 +25,16 @@ initializeDatabase().then(() => {
     console.log(`Auth service listening on port ${port}`);
     console.log(`🌐 Network: Listening on all interfaces (0.0.0.0:${port})`);
 
-    // Initialize background jobs
-    BackgroundJobsService.initialize();
+    // Initialize background jobs asynchronously after a short delay
+    // This prevents potential SIGSEGV issues with node-cron initialization
+    setImmediate(() => {
+      try {
+        BackgroundJobsService.initialize();
+      } catch (error) {
+        console.error('⚠️  Failed to initialize background jobs:', error.message);
+        console.log('⚠️  Service will continue without background jobs');
+      }
+    });
   });
 });
 
