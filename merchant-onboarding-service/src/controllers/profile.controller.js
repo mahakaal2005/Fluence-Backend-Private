@@ -30,6 +30,18 @@ const paginationSchema = z.object({
   offset: z.string().optional().transform(val => val ? parseInt(val) : 0)
 });
 
+const topMerchantsQuerySchema = z.object({
+  limit: z.string().optional().transform((val) => {
+    const parsed = val ? parseInt(val, 10) : 10;
+    return Number.isNaN(parsed) || parsed <= 0 ? 10 : Math.min(parsed, 100);
+  }),
+  days: z.string().optional().transform((val) => {
+    if (!val) return null;
+    const parsed = parseInt(val, 10);
+    return Number.isNaN(parsed) || parsed <= 0 ? null : parsed;
+  })
+});
+
 /**
  * Get merchant profile
  */
@@ -192,6 +204,34 @@ export async function getMerchantProfileByInstagramId(req, res, next) {
     });
   } catch (err) {
     console.error(`[PUBLIC-ENDPOINT] Error in getMerchantProfileByInstagramId:`, err.message);
+    next(err);
+  }
+}
+
+/**
+ * Get top merchants ranked by cashback awarded (public endpoint)
+ */
+export async function getTopMerchantsByCashback(req, res, next) {
+  try {
+    const { limit, days } = topMerchantsQuerySchema.parse(req.query);
+
+    const merchants = await MerchantProfileModel.getTopMerchantsByCashback(limit, {
+      timeframeDays: days
+    });
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      data: merchants,
+      metadata: {
+        limit,
+        timeframeDays: days
+      },
+      message: 'Top merchants ranked by cashback awarded'
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return next(new ApiError(StatusCodes.BAD_REQUEST, 'Invalid query parameters', err.flatten()));
+    }
     next(err);
   }
 }

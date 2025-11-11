@@ -13,7 +13,8 @@ import {
   updateMerchantProfileStatus,
   uploadProfileImage,
   uploadSingleImage,
-  getMerchantProfileByInstagramId
+  getMerchantProfileByInstagramId,
+  getTopMerchantsByCashback
 } from '../controllers/profile.controller.js';
 
 const router = Router();
@@ -23,6 +24,7 @@ router.get('/active', getActiveMerchantProfiles);
 router.get('/business-type/:businessType', getMerchantProfilesByBusinessType);
 router.get('/search', searchMerchantProfiles);
 router.get('/stats', getMerchantProfileStats);
+router.get('/top/cashback', getTopMerchantsByCashback);
 // Public endpoint for auto-linking social posts to transactions - no authentication required
 router.get('/by-instagram/:instagramId', getMerchantProfileByInstagramId);
 router.put('/:merchantId/avatar', uploadSingleImage('image'), uploadProfileImage);

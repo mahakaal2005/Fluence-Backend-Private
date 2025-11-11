@@ -63,7 +63,7 @@ services:
       - MERCHANT_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - AUTH_SERVICE_URL=http://auth-service:4001
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_USER=your-email@gmail.com
@@ -86,10 +86,10 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-cashback-budget
     ports:
-      - "3002:3000"
+      - "4002:4002"
     environment:
       - NODE_ENV=development
-      - CASHBACK_BUDGET_PORT=3000
+      - CASHBACK_BUDGET_PORT=4002
       - CASHBACK_DB_HOST=161.248.37.208
       - CASHBACK_DB_PORT=5432
       - CASHBACK_DB_NAME=postgres
@@ -98,7 +98,7 @@ services:
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - AUTH_SERVICE_URL=http://auth-service:4001
       - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:4003
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
     depends_on:
       auth-service:
@@ -119,10 +119,10 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-notification
     ports:
-      - "3003:3000"
+      - "4004:4004"
     environment:
       - NODE_ENV=development
-      - NOTIFICATION_PORT=3000
+      - NOTIFICATION_PORT=4004
       - NOTIFICATION_DB_HOST=161.248.37.208
       - NOTIFICATION_DB_PORT=5432
       - NOTIFICATION_DB_NAME=postgres
@@ -131,7 +131,7 @@ services:
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - AUTH_SERVICE_URL=http://auth-service:4001
       - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:4003
-      - CASHBACK_SERVICE_URL=http://cashback-budget-service:3000
+      - CASHBACK_SERVICE_URL=http://cashback-budget-service:4002
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_USER=your-email@gmail.com
@@ -158,10 +158,10 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-points-wallet
     ports:
-      - "3004:3000"
+      - "4005:4005"
     environment:
       - NODE_ENV=development
-      - POINTS_WALLET_PORT=3000
+      - POINTS_WALLET_PORT=4005
       - POINTS_DB_HOST=161.248.37.208
       - POINTS_DB_PORT=5432
       - POINTS_DB_NAME=postgres
@@ -169,9 +169,9 @@ services:
       - POINTS_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - AUTH_SERVICE_URL=http://auth-service:4001
-      - REFERRAL_SERVICE_URL=http://referral-service:3000
-      - SOCIAL_SERVICE_URL=http://social-features-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - REFERRAL_SERVICE_URL=http://referral-service:4006
+      - SOCIAL_SERVICE_URL=http://social-features-service:4007
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
     depends_on:
       redis:
@@ -192,10 +192,10 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-referral
     ports:
-      - "3005:3000"
+      - "4006:4006"
     environment:
       - NODE_ENV=development
-      - REFERRAL_PORT=3000
+      - REFERRAL_PORT=4006
       - REFERRAL_DB_HOST=161.248.37.208
       - REFERRAL_DB_PORT=5432
       - REFERRAL_DB_NAME=postgres
@@ -203,9 +203,9 @@ services:
       - REFERRAL_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - AUTH_SERVICE_URL=http://auth-service:4001
-      - POINTS_SERVICE_URL=http://points-wallet-service:3000
-      - SOCIAL_SERVICE_URL=http://social-features-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - POINTS_SERVICE_URL=http://points-wallet-service:4005
+      - SOCIAL_SERVICE_URL=http://social-features-service:4007
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
     depends_on:
       redis:
@@ -228,10 +228,10 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-social-features
     ports:
-      - "3006:3000"
+      - "4007:4007"
     environment:
       - NODE_ENV=development
-      - SOCIAL_FEATURES_PORT=3000
+      - SOCIAL_FEATURES_PORT=4007
       - SOCIAL_DB_HOST=161.248.37.208
       - SOCIAL_DB_PORT=5432
       - SOCIAL_DB_NAME=postgres
@@ -239,9 +239,9 @@ services:
       - SOCIAL_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - AUTH_SERVICE_URL=http://auth-service:4001
-      - POINTS_SERVICE_URL=http://points-wallet-service:3000
-      - REFERRAL_SERVICE_URL=http://referral-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - POINTS_SERVICE_URL=http://points-wallet-service:4005
+      - REFERRAL_SERVICE_URL=http://referral-service:4006
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
       - FACEBOOK_APP_ID=your-facebook-app-id
       - FACEBOOK_APP_SECRET=your-facebook-app-secret

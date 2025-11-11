@@ -64,6 +64,7 @@ export class InstagramOAuthService {
 
     // Normalize redirect URI to ensure consistency
     const normalizedRedirectUri = this.normalizeRedirectUri(redirectUri);
+    console.log('normalizedRedirectUri', normalizedRedirectUri);
 
     // Instagram Graph API with Business Login
     // OAuth authorization uses www.instagram.com, API calls use graph.instagram.com
@@ -854,91 +855,64 @@ export class InstagramOAuthService {
           continue; // Skip this post
         }
 
-        // Check if post already exists
-        const existingPost = await pool.query(
-          'SELECT id, original_transaction_id FROM social_posts WHERE social_account_id = $1 AND platform_post_id = $2',
-          [socialAccountId, item.id]
-        );
-
-        if (existingPost.rows.length > 0) {
-          const postId = existingPost.rows[0].id;
-          const existingTransactionId = existingPost.rows[0].original_transaction_id;
-
-          // Update existing post
-          await pool.query(
-            `UPDATE social_posts 
-             SET content = $1, media_urls = $2, post_type = $3,
-                 likes_count = $4, comments_count = $5,
-                 published_at = $6, updated_at = NOW()
-             WHERE id = $7`,
-            [
-              item.caption,
-              mediaUrls,
-              postType,
-              item.likeCount,
-              item.commentsCount,
-              publishedAt,
-              postId
-            ]
-          );
-
-          // Try to auto-link if not already linked and post is within last 24 hours
-          if (!existingTransactionId && mentions.length > 0 && isRecentPost) {
-            const linkedTransactionId = await this.autoLinkPostToTransaction(
-              userId,
-              postId,
-              mentions,
-              publishedAt,
-              authToken
-            );
-            if (linkedTransactionId) {
-              autoLinked++;
-            }
-          } else if (!isRecentPost && mentions.length > 0) {
-            console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
-          }
-
-          updated++;
-        } else {
-          // Create new post with pending_review status
-          const newPost = await pool.query(
-            `INSERT INTO social_posts (
+        // Upsert post to avoid duplicates
+        const upsertResult = await pool.query(
+          `INSERT INTO social_posts (
               user_id, social_account_id, platform_post_id, content, media_urls,
               post_type, status, published_at, likes_count, comments_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-            [
-              userId,
-              socialAccountId,
-              item.id,
-              item.caption,
-              mediaUrls,
-              postType,
-              'pending_review', // New posts from Instagram need admin review
-              publishedAt,
-              item.likeCount,
-              item.commentsCount
-            ]
-          );
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (social_account_id, platform_post_id)
+            DO UPDATE SET
+              content = EXCLUDED.content,
+              media_urls = EXCLUDED.media_urls,
+              post_type = EXCLUDED.post_type,
+              likes_count = EXCLUDED.likes_count,
+              comments_count = EXCLUDED.comments_count,
+              published_at = EXCLUDED.published_at,
+              updated_at = NOW()
+            RETURNING social_posts.id,
+                      social_posts.original_transaction_id,
+                      (xmax = 0) AS inserted;`,
+          [
+            userId,
+            socialAccountId,
+            item.id,
+            item.caption,
+            mediaUrls,
+            postType,
+            'pending_review',
+            publishedAt,
+            item.likeCount,
+            item.commentsCount
+          ]
+        );
 
-          const postId = newPost.rows[0].id;
+        const { id: postId, original_transaction_id: existingTransactionId, inserted } =
+          upsertResult.rows[0];
 
-          // Try to auto-link based on merchant tags (only for posts in last 24 hours)
-          if (mentions.length > 0 && isRecentPost) {
-            const linkedTransactionId = await this.autoLinkPostToTransaction(
-              userId,
-              postId,
-              mentions,
-              publishedAt,
-              authToken
-            );
-            if (linkedTransactionId) {
-              autoLinked++;
-            }
-          } else if (!isRecentPost && mentions.length > 0) {
-            console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
-          }
-
+        if (inserted) {
           created++;
+        } else {
+          updated++;
+        }
+
+        const shouldAttemptAutoLink =
+          mentions.length > 0 && isRecentPost && (!existingTransactionId || inserted);
+
+        if (shouldAttemptAutoLink) {
+          const linkedTransactionId = await this.autoLinkPostToTransaction(
+            userId,
+            postId,
+            mentions,
+            publishedAt,
+            authToken
+          );
+          if (linkedTransactionId) {
+            autoLinked++;
+          }
+        } else if (!isRecentPost && mentions.length > 0) {
+          console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
         }
       }
 
