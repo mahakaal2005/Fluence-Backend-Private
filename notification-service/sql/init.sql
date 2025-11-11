@@ -105,27 +105,68 @@ CREATE INDEX IF NOT EXISTS idx_notification_queues_scheduled_at ON notification_
 
 CREATE INDEX IF NOT EXISTS idx_notification_analytics_date ON notification_analytics (date);
 CREATE INDEX IF NOT EXISTS idx_notification_analytics_type ON notification_analytics (type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_analytics_date_type_unique ON notification_analytics (date, type);
 
 -- Function to update notification status
 CREATE OR REPLACE FUNCTION update_notification_status()
 RETURNS TRIGGER AS $$
+DECLARE
+  sent_increment INTEGER := CASE WHEN NEW.status = 'sent' THEN 1 ELSE 0 END;
+  delivered_increment INTEGER := CASE WHEN NEW.status = 'delivered' THEN 1 ELSE 0 END;
+  failed_increment INTEGER := CASE WHEN NEW.status = 'failed' THEN 1 ELSE 0 END;
+  read_increment INTEGER := CASE WHEN NEW.status = 'read' THEN 1 ELSE 0 END;
 BEGIN
   -- Update analytics when notification status changes
   IF OLD.status IS DISTINCT FROM NEW.status THEN
-    INSERT INTO notification_analytics (date, type, total_sent, total_delivered, total_failed, total_read)
+    INSERT INTO notification_analytics (
+      date,
+      type,
+      total_sent,
+      total_delivered,
+      total_failed,
+      total_read,
+      delivery_rate,
+      read_rate,
+      created_at,
+      updated_at
+    )
     VALUES (
       CURRENT_DATE,
       NEW.type,
-      CASE WHEN NEW.status = 'sent' THEN 1 ELSE 0 END,
-      CASE WHEN NEW.status = 'delivered' THEN 1 ELSE 0 END,
-      CASE WHEN NEW.status = 'failed' THEN 1 ELSE 0 END,
-      CASE WHEN NEW.status = 'read' THEN 1 ELSE 0 END
+      sent_increment,
+      delivered_increment,
+      failed_increment,
+      read_increment,
+      CASE
+        WHEN sent_increment > 0 THEN
+          (delivered_increment::DECIMAL / NULLIF(sent_increment, 0)) * 100
+        ELSE 0
+      END,
+      CASE
+        WHEN delivered_increment > 0 THEN
+          (read_increment::DECIMAL / NULLIF(delivered_increment, 0)) * 100
+        ELSE 0
+      END,
+      NOW(),
+      NOW()
     )
     ON CONFLICT (date, type) DO UPDATE SET
-      total_sent = notification_analytics.total_sent + CASE WHEN NEW.status = 'sent' THEN 1 ELSE 0 END,
-      total_delivered = notification_analytics.total_delivered + CASE WHEN NEW.status = 'delivered' THEN 1 ELSE 0 END,
-      total_failed = notification_analytics.total_failed + CASE WHEN NEW.status = 'failed' THEN 1 ELSE 0 END,
-      total_read = notification_analytics.total_read + CASE WHEN NEW.status = 'read' THEN 1 ELSE 0 END,
+      total_sent = notification_analytics.total_sent + sent_increment,
+      total_delivered = notification_analytics.total_delivered + delivered_increment,
+      total_failed = notification_analytics.total_failed + failed_increment,
+      total_read = notification_analytics.total_read + read_increment,
+      delivery_rate = CASE
+        WHEN (notification_analytics.total_sent + sent_increment) > 0 THEN
+          ((notification_analytics.total_delivered + delivered_increment)::DECIMAL /
+           (notification_analytics.total_sent + sent_increment)) * 100
+        ELSE 0
+      END,
+      read_rate = CASE
+        WHEN (notification_analytics.total_delivered + delivered_increment) > 0 THEN
+          ((notification_analytics.total_read + read_increment)::DECIMAL /
+           (notification_analytics.total_delivered + delivered_increment)) * 100
+        ELSE 0
+      END,
       updated_at = NOW();
   END IF;
   
@@ -138,34 +179,6 @@ CREATE TRIGGER trigger_update_notification_analytics
   AFTER UPDATE ON notifications
   FOR EACH ROW
   EXECUTE FUNCTION update_notification_status();
-
--- Function to calculate delivery and read rates
-CREATE OR REPLACE FUNCTION calculate_notification_rates()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Update rates when analytics are updated
-  UPDATE notification_analytics 
-  SET 
-    delivery_rate = CASE 
-      WHEN total_sent > 0 THEN (total_delivered::DECIMAL / total_sent) * 100 
-      ELSE 0 
-    END,
-    read_rate = CASE 
-      WHEN total_delivered > 0 THEN (total_read::DECIMAL / total_delivered) * 100 
-      ELSE 0 
-    END,
-    updated_at = NOW()
-  WHERE id = NEW.id;
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Trigger to calculate rates
-CREATE TRIGGER trigger_calculate_notification_rates
-  AFTER UPDATE ON notification_analytics
-  FOR EACH ROW
-  EXECUTE FUNCTION calculate_notification_rates();
 
 -- Help Content Table
 CREATE TABLE IF NOT EXISTS help_content (

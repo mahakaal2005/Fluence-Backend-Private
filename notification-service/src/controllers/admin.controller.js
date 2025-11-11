@@ -43,7 +43,7 @@ export class AdminController {
                     title,
                     message
                 });
-                
+
                 try {
                     await NotificationService.scheduleBulkNotifications(
                         userIds,
@@ -53,12 +53,12 @@ export class AdminController {
                         scheduledAt,
                         { sentBy: req.user.id }
                     );
-                    
+
                     console.log('Notifications scheduled successfully');
                 } catch (scheduleError) {
                     console.error('Error scheduling notifications:', scheduleError);
                     throw new ApiError(
-                        StatusCodes.INTERNAL_SERVER_ERROR, 
+                        StatusCodes.INTERNAL_SERVER_ERROR,
                         `Failed to schedule notifications: ${scheduleError.message}`
                     );
                 }
@@ -121,13 +121,14 @@ export class AdminController {
         try {
             const pool = getPool();
 
-            // Get last 7 days of notification counts
+            // Get last 30 days of notification counts (frontend will filter to current week)
+            // Keeping 30 days allows frontend to show weekly/monthly views in the future
             const weeklyResult = await pool.query(`
         SELECT 
           DATE(created_at) as date,
           COUNT(*) as count
         FROM notifications
-        WHERE created_at >= NOW() - INTERVAL '7 days'
+        WHERE created_at >= NOW() - INTERVAL '30 days'
         GROUP BY DATE(created_at)
         ORDER BY date ASC
       `);
@@ -156,7 +157,7 @@ export class AdminController {
 
             const totalSent = parseInt(totalSentResult.rows[0].total_sent) || 0;
             const totalOpened = parseInt(totalSentResult.rows[0].total_opened) || 0;
-            
+
             // For scheduled notifications: Check if scheduled_at column exists
             // (It will be added when schedule notification feature is implemented)
             let scheduled = 0;

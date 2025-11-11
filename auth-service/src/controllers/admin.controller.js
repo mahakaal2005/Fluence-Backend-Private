@@ -20,7 +20,7 @@ const createAdminUserSchema = z.object({
 export async function createAdminUser(req, res, next) {
   try {
     const { name, email, password, phone } = createAdminUserSchema.parse(req.body);
-    
+
     // Check if user already exists
     const existingUser = await findUserByEmail(email);
     if (existingUser) {
@@ -68,8 +68,9 @@ export async function listUsers(req, res, next) {
   try {
     const { page = 1, limit = 10, role, status } = req.query;
     const offset = (page - 1) * limit;
-    
-    let query = 'SELECT id, name, email, role, status, is_approved, created_at FROM users WHERE 1=1';
+
+    // Select user fields including phone (address column doesn't exist yet)
+    let query = 'SELECT id, name, email, phone, role, status, is_approved, created_at FROM users WHERE 1=1';
     const params = [];
     let paramCount = 0;
 
@@ -89,7 +90,7 @@ export async function listUsers(req, res, next) {
     params.push(parseInt(limit), offset);
 
     const result = await getPool().query(query, params);
-    
+
     // Get total count
     let countQuery = 'SELECT COUNT(*) FROM users WHERE 1=1';
     const countParams = [];
