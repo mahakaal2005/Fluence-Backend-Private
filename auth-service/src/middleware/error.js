@@ -18,6 +18,26 @@ export function errorHandler(err, _req, res, _next) {
     return;
   }
   
+  // Handle database connection errors
+  if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
+    console.error('Database connection error:', err.message);
+    res.status(StatusCodes.SERVICE_UNAVAILABLE).json({ 
+      error: 'Database service unavailable',
+      message: 'Unable to connect to database. Please try again later.'
+    });
+    return;
+  }
+  
+  // Handle query timeout errors
+  if (err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
+    console.error('Database query timeout:', err.message);
+    res.status(StatusCodes.REQUEST_TIMEOUT).json({ 
+      error: 'Request timeout',
+      message: 'The request took too long to process. Please try again.'
+    });
+    return;
+  }
+  
   // Log full error in development, sanitized in production
   if (process.env.NODE_ENV === 'production') {
     console.error('Unhandled error:', err.message);
@@ -26,8 +46,11 @@ export function errorHandler(err, _req, res, _next) {
     console.error('Unhandled error:', err);
   }
   
-  res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
-    error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message 
-  });
+  // Ensure response hasn't been sent
+  if (!res.headersSent) {
+    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ 
+      error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message 
+    });
+  }
 }
 

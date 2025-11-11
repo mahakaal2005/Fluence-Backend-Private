@@ -1,22 +1,34 @@
+# Use Node.js 20 Alpine image
 FROM node:20-alpine
 
+# Set working directory
 WORKDIR /app
 
-# Install dependencies first (use package.json + package-lock.json if present)
+# Copy package files
 COPY package*.json ./
+
+# Install dependencies
 RUN npm ci --omit=dev || npm install --omit=dev
 
-# Copy source
+# Copy source code
 COPY . .
 
-# Expose service port
-ENV PORT=4001
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+
+# Change ownership of the app directory
+RUN chown -R nodejs:nodejs /app
+USER nodejs
+
+# Expose port
 EXPOSE 4001
 
-# Healthcheck (optional)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://localhost:${PORT}/health || exit 1
+# Health check - increased start-period to allow time for DB connection and migration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:4001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-CMD ["npm", "start"]
+# Start the application
+CMD ["node", "src/server.js"]
 
 

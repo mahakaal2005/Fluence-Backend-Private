@@ -24,8 +24,8 @@ USER nodejs
 # Expose port
 EXPOSE 4003
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+# Health check - increased start-period to allow time for DB connection and migration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD node -e "require('http').get('http://localhost:4003/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
 # Start the application

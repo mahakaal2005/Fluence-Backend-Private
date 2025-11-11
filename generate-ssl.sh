@@ -29,3 +29,4 @@ echo "⚠️  These are self-signed certificates for testing only"
 echo "🔒 For production, use Let's Encrypt (certbot) instead"
 
 
+
