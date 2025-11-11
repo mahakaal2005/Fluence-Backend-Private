@@ -1,6 +1,8 @@
+import cron from 'node-cron';
 import app from './app.js';
 import { getConfig } from './config/index.js';
 import { testConnection, migrate } from './config/database.js';
+import { SchedulerService } from './services/scheduler.service.js';
 
 const config = getConfig();
 
@@ -31,6 +33,30 @@ async function startServer() {
       console.log(`🔗 Health check: http://localhost:${config.port}/health`);
       console.log(`📚 API Documentation: http://localhost:${config.port}/`);
       console.log(`🌐 Network: Listening on all interfaces (0.0.0.0:${config.port})`);
+      
+      // Initialize scheduled notifications processor
+      // Runs every minute to check for due notifications
+      console.log('⏰ Initializing scheduled notifications processor...');
+      
+      const schedulerJob = cron.schedule('* * * * *', async () => {
+        try {
+          await SchedulerService.processScheduledNotifications();
+        } catch (error) {
+          console.error('Scheduler job error:', error);
+        }
+      });
+
+      console.log('✓ Scheduler initialized - checking for scheduled notifications every minute');
+      
+      // Run immediately on startup to catch any missed notifications
+      setTimeout(async () => {
+        console.log('🔄 Running initial scheduled notifications check...');
+        try {
+          await SchedulerService.processScheduledNotifications();
+        } catch (error) {
+          console.error('Initial scheduler run error:', error);
+        }
+      }, 5000); // Wait 5 seconds after startup
     });
 
     // Graceful shutdown

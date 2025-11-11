@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "start:prod": "NODE_ENV=production node src/server.js",
+    "migrate": "node run-migrations.js",
     "migrate:init": "psql \"%NOTIFICATION_DB_URI%\" -f sql/init.sql",
     "test": "jest",
     "lint": "eslint src/"

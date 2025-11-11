@@ -33,3 +33,4 @@ COMMENT ON COLUMN users.is_approved IS 'User approval status: NULL = pending/not
 -- GROUP BY is_approved
 -- ORDER BY is_approved NULLS FIRST;
 
+
