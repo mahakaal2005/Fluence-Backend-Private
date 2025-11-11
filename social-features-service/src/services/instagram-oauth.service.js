@@ -5,6 +5,46 @@ import { ApiError } from '../middleware/error.js';
 import { StatusCodes } from 'http-status-codes';
 
 export class InstagramOAuthService {
+  static #uniqueConstraintEnsured = false;
+
+  static async ensureSocialPostUniquenessConstraint() {
+    if (this.#uniqueConstraintEnsured) {
+      return;
+    }
+
+    const pool = getPool();
+    try {
+      // Remove duplicate rows keeping the latest updated record
+      await pool.query(`
+        WITH ranked_posts AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY social_account_id, platform_post_id
+              ORDER BY updated_at DESC, created_at DESC
+            ) AS row_num
+          FROM social_posts
+          WHERE social_account_id IS NOT NULL
+            AND platform_post_id IS NOT NULL
+        )
+        DELETE FROM social_posts sp
+        USING ranked_posts rp
+        WHERE sp.id = rp.id
+          AND rp.row_num > 1;
+      `);
+
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_social_posts_account_post_unique
+        ON social_posts (social_account_id, platform_post_id)
+        WHERE social_account_id IS NOT NULL AND platform_post_id IS NOT NULL;
+      `);
+
+      this.#uniqueConstraintEnsured = true;
+    } catch (error) {
+      console.error('[SYNC] Failed to ensure social_posts uniqueness constraint:', error);
+      throw error;
+    }
+  }
   /**
    * Get Instagram platform ID from database
    */
@@ -805,6 +845,7 @@ export class InstagramOAuthService {
   static async syncInstagramPosts(userId, socialAccountId, accessToken, maxPosts = 100, authToken = null) {
     try {
       const pool = getPool();
+      await this.ensureSocialPostUniquenessConstraint();
       
       // Fetch all media from Instagram
       const media = await this.getAllInstagramMedia(accessToken, maxPosts);
