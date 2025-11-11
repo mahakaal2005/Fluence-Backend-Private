@@ -1258,6 +1258,87 @@ export class SocialController {
   }
 
   /**
+   * Get Instagram profile and media in a single response
+   * GET /api/social/get-all-instagram-data?accountId=xxx&limit=25
+   */
+  static async getAllInstagramData(req, res, next) {
+    try {
+      const userId = req.user.id;
+      const { accountId, limit = 25, after = null } = req.query;
+      const pool = getPool();
+
+      if (!accountId) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Account ID is required');
+      }
+
+      const accountResult = await pool.query(
+        `SELECT sa.*, sp.name as platform_name 
+         FROM social_accounts sa
+         JOIN social_platforms sp ON sa.platform_id = sp.id
+         WHERE sa.id = $1 AND sa.user_id = $2 AND sa.is_connected = true`,
+        [accountId, userId]
+      );
+
+      if (accountResult.rows.length === 0) {
+        throw new ApiError(StatusCodes.NOT_FOUND, 'Social account not found or not connected');
+      }
+
+      const account = accountResult.rows[0];
+
+      if (account.platform_name !== 'instagram') {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'This endpoint is only for Instagram accounts');
+      }
+
+      if (!account.access_token) {
+        throw new ApiError(StatusCodes.BAD_REQUEST, 'Access token not found for this account');
+      }
+
+      let accessToken = account.access_token;
+      if (account.token_expires_at && new Date(account.token_expires_at) < new Date()) {
+        try {
+          const refreshedToken = await InstagramOAuthService.refreshToken(accessToken);
+          accessToken = refreshedToken.accessToken;
+
+          await pool.query(
+            'UPDATE social_accounts SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3',
+            [
+              refreshedToken.accessToken,
+              new Date(Date.now() + refreshedToken.expiresIn * 1000),
+              accountId
+            ]
+          );
+        } catch (refreshError) {
+          console.error('Failed to refresh token:', refreshError);
+        }
+      }
+
+      const profile = await InstagramOAuthService.getInstagramProfile(accessToken);
+      const mediaOptions = { limit: parseInt(limit, 10) };
+      if (after) {
+        mediaOptions.after = after;
+      }
+      const mediaResult = await InstagramOAuthService.getInstagramMedia(accessToken, mediaOptions);
+
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          profile: {
+            ...profile,
+            media: {
+              posts: mediaResult.data,
+              paging: mediaResult.paging,
+              summary: mediaResult.summary
+            }
+          }
+        },
+        message: 'Instagram profile and media fetched successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Fetch Instagram posts from API (without syncing to database)
    * GET /api/social/instagram/posts?accountId=xxx&limit=25&sync=false
    */

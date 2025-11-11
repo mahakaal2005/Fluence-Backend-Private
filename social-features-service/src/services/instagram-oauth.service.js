@@ -847,7 +847,7 @@ export class InstagramOAuthService {
         // Only process posts that have @fluencepay tagged
         const captionLower = (item.caption || '').toLowerCase();
         const hasFluencePayTag = captionLower.includes('@fluencepay');
-        
+
         if (!hasFluencePayTag) {
           console.log(`[SYNC] Post ${item.id} skipped: No @fluencepay tag found`);
           skipped++;
