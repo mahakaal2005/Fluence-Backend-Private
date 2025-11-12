@@ -23,6 +23,15 @@ export function getConfig() {
     expiresIn: process.env.JWT_EXPIRES_IN || (nodeEnv === 'production' ? '1h' : '1d')
   };
 
-  return { nodeEnv, port, pg, jwt, rateLimitWindowMs, rateLimitMax };
+  const msg91 = {
+    authKey: process.env.MSG91_AUTH_KEY || '',
+    senderId: process.env.MSG91_SENDER_ID || '',
+    templateId: process.env.MSG91_TEMPLATE_ID || '',
+    baseUrl: process.env.MSG91_BASE_URL || 'https://control.msg91.com',
+    otpExpiryMinutes: Number(process.env.MSG91_OTP_EXPIRY_MINUTES || 10),
+    defaultCountryCode: process.env.MSG91_DEFAULT_COUNTRY_CODE || '91'
+  };
+
+  return { nodeEnv, port, pg, jwt, msg91, rateLimitWindowMs, rateLimitMax };
 }
 
