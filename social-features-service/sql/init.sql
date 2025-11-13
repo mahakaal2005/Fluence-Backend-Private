@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS social_posts (
   content_hash VARCHAR(64), -- SHA256 hash for duplicate detection
   merchant_tags TEXT[], -- Array of merchant tags found in content
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (social_account_id, platform_post_id)
 );
 
 -- Social Rewards Table
@@ -190,6 +191,29 @@ CREATE INDEX IF NOT EXISTS idx_social_verification_post_id ON social_verificatio
 CREATE INDEX IF NOT EXISTS idx_social_verification_status ON social_verification (status);
 
 CREATE INDEX IF NOT EXISTS idx_social_settings_user_id ON social_settings (user_id);
+
+-- Ensure unique constraint exists for social posts (handles legacy databases)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'social_posts_account_post_unique'
+      AND conrelid = 'social_posts'::regclass
+  ) THEN
+    BEGIN
+      ALTER TABLE social_posts
+      ADD CONSTRAINT social_posts_account_post_unique
+      UNIQUE (social_account_id, platform_post_id);
+    EXCEPTION
+      WHEN unique_violation THEN
+        RAISE NOTICE 'Unable to add unique constraint social_posts_account_post_unique due to existing duplicates';
+      WHEN others THEN
+        RAISE NOTICE 'Unable to add unique constraint social_posts_account_post_unique: %', SQLERRM;
+    END;
+  END IF;
+END;
+$$;
 
 -- Function to update social analytics
 CREATE OR REPLACE FUNCTION update_social_analytics()

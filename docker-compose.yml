@@ -1,28 +1,6 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: fluence-pay-postgres
-    environment:
-      POSTGRES_DB: fluence_pay
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_MULTIPLE_DATABASES: auth_service,merchant_onboarding,cashback_budget,notification_service
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
-    networks:
-      - fluence-pay-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Redis for caching and message queuing
   redis:
     image: redis:7-alpine
@@ -46,20 +24,18 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-auth
     ports:
-      - "3000:3000"
+      - "4001:4001"
     environment:
       - NODE_ENV=development
-      - PORT=3000
-      - DB_HOST=postgres
+      - PORT=4001
+      - DB_HOST=161.248.37.208
       - DB_PORT=5432
-      - DB_NAME=auth_service
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - DB_NAME=postgres
+      - DB_USER=bp-user
+      - DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - REDIS_URL=redis://redis:6379
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -76,26 +52,24 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-merchant-onboarding
     ports:
-      - "3001:3000"
+      - "4003:4003"
     environment:
       - NODE_ENV=development
-      - MERCHANT_ONBOARDING_PORT=3000
-      - MERCHANT_DB_HOST=postgres
+      - MERCHANT_ONBOARDING_PORT=4003
+      - MERCHANT_DB_HOST=161.248.37.208
       - MERCHANT_DB_PORT=5432
-      - MERCHANT_DB_NAME=merchant_onboarding
-      - MERCHANT_DB_USER=postgres
-      - MERCHANT_DB_PASSWORD=postgres
+      - MERCHANT_DB_NAME=postgres
+      - MERCHANT_DB_USER=bp-user
+      - MERCHANT_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - AUTH_SERVICE_URL=http://auth-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_USER=your-email@gmail.com
       - SMTP_PASS=your-app-password
       - SMTP_FROM=noreply@fluencepay.com
     depends_on:
-      postgres:
-        condition: service_healthy
       auth-service:
         condition: service_started
     networks:
@@ -112,23 +86,21 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-cashback-budget
     ports:
-      - "3002:3000"
+      - "4002:4002"
     environment:
       - NODE_ENV=development
-      - CASHBACK_BUDGET_PORT=3000
-      - CASHBACK_DB_HOST=postgres
+      - CASHBACK_BUDGET_PORT=4002
+      - CASHBACK_DB_HOST=161.248.37.208
       - CASHBACK_DB_PORT=5432
-      - CASHBACK_DB_NAME=cashback_budget
-      - CASHBACK_DB_USER=postgres
-      - CASHBACK_DB_PASSWORD=postgres
+      - CASHBACK_DB_NAME=postgres
+      - CASHBACK_DB_USER=bp-user
+      - CASHBACK_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - AUTH_SERVICE_URL=http://auth-service:3000
-      - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:4003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
     depends_on:
-      postgres:
-        condition: service_healthy
       auth-service:
         condition: service_started
       merchant-onboarding-service:
@@ -147,19 +119,19 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-notification
     ports:
-      - "3003:3000"
+      - "4004:4004"
     environment:
       - NODE_ENV=development
-      - NOTIFICATION_PORT=3000
-      - NOTIFICATION_DB_HOST=postgres
+      - NOTIFICATION_PORT=4004
+      - NOTIFICATION_DB_HOST=161.248.37.208
       - NOTIFICATION_DB_PORT=5432
-      - NOTIFICATION_DB_NAME=notification_service
-      - NOTIFICATION_DB_USER=postgres
-      - NOTIFICATION_DB_PASSWORD=postgres
+      - NOTIFICATION_DB_NAME=postgres
+      - NOTIFICATION_DB_USER=bp-user
+      - NOTIFICATION_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - AUTH_SERVICE_URL=http://auth-service:3000
-      - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:3000
-      - CASHBACK_SERVICE_URL=http://cashback-budget-service:3000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:4003
+      - CASHBACK_SERVICE_URL=http://cashback-budget-service:4002
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_USER=your-email@gmail.com
@@ -170,8 +142,6 @@ services:
       - TWILIO_FROM_NUMBER=+1234567890
       - FIREBASE_SERVER_KEY=your-firebase-server-key
     depends_on:
-      postgres:
-        condition: service_healthy
       auth-service:
         condition: service_started
     networks:
@@ -188,24 +158,22 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-points-wallet
     ports:
-      - "3004:3000"
+      - "4005:4005"
     environment:
       - NODE_ENV=development
-      - POINTS_WALLET_PORT=3000
-      - POINTS_DB_HOST=postgres
+      - POINTS_WALLET_PORT=4005
+      - POINTS_DB_HOST=161.248.37.208
       - POINTS_DB_PORT=5432
-      - POINTS_DB_NAME=points_wallet
-      - POINTS_DB_USER=postgres
-      - POINTS_DB_PASSWORD=postgres
+      - POINTS_DB_NAME=postgres
+      - POINTS_DB_USER=bp-user
+      - POINTS_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - AUTH_SERVICE_URL=http://auth-service:3000
-      - REFERRAL_SERVICE_URL=http://referral-service:3000
-      - SOCIAL_SERVICE_URL=http://social-features-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - REFERRAL_SERVICE_URL=http://referral-service:4006
+      - SOCIAL_SERVICE_URL=http://social-features-service:4007
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       auth-service:
@@ -224,24 +192,22 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-referral
     ports:
-      - "3005:3000"
+      - "4006:4006"
     environment:
       - NODE_ENV=development
-      - REFERRAL_PORT=3000
-      - REFERRAL_DB_HOST=postgres
+      - REFERRAL_PORT=4006
+      - REFERRAL_DB_HOST=161.248.37.208
       - REFERRAL_DB_PORT=5432
-      - REFERRAL_DB_NAME=referral_service
-      - REFERRAL_DB_USER=postgres
-      - REFERRAL_DB_PASSWORD=postgres
+      - REFERRAL_DB_NAME=postgres
+      - REFERRAL_DB_USER=bp-user
+      - REFERRAL_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - AUTH_SERVICE_URL=http://auth-service:3000
-      - POINTS_SERVICE_URL=http://points-wallet-service:3000
-      - SOCIAL_SERVICE_URL=http://social-features-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - POINTS_SERVICE_URL=http://points-wallet-service:4005
+      - SOCIAL_SERVICE_URL=http://social-features-service:4007
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       auth-service:
@@ -262,20 +228,20 @@ services:
       dockerfile: Dockerfile
     container_name: fluence-pay-social-features
     ports:
-      - "3006:3000"
+      - "4007:4007"
     environment:
       - NODE_ENV=development
-      - SOCIAL_FEATURES_PORT=3000
-      - SOCIAL_DB_HOST=postgres
+      - SOCIAL_FEATURES_PORT=4007
+      - SOCIAL_DB_HOST=161.248.37.208
       - SOCIAL_DB_PORT=5432
-      - SOCIAL_DB_NAME=social_features
-      - SOCIAL_DB_USER=postgres
-      - SOCIAL_DB_PASSWORD=postgres
+      - SOCIAL_DB_NAME=postgres
+      - SOCIAL_DB_USER=bp-user
+      - SOCIAL_DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - AUTH_SERVICE_URL=http://auth-service:3000
-      - POINTS_SERVICE_URL=http://points-wallet-service:3000
-      - REFERRAL_SERVICE_URL=http://referral-service:3000
-      - NOTIFICATION_SERVICE_URL=http://notification-service:3000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - POINTS_SERVICE_URL=http://points-wallet-service:4005
+      - REFERRAL_SERVICE_URL=http://referral-service:4006
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
       - REDIS_URL=redis://redis:6379
       - FACEBOOK_APP_ID=your-facebook-app-id
       - FACEBOOK_APP_SECRET=your-facebook-app-secret
@@ -283,14 +249,11 @@ services:
       - TWITTER_CLIENT_SECRET=your-twitter-client-secret
       - INSTAGRAM_APP_ID=your-instagram-app-id
       - INSTAGRAM_APP_SECRET=your-instagram-app-secret
-      - INSTAGRAM_REDIRECT_URI=https://your-tunnel-url.com/api/social/instagram/callback
       - LINKEDIN_CLIENT_ID=your-linkedin-client-id
       - LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
       - TIKTOK_CLIENT_KEY=your-tiktok-client-key
       - TIKTOK_CLIENT_SECRET=your-tiktok-client-secret
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       auth-service:
@@ -326,7 +289,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   redis_data:
 
 networks:

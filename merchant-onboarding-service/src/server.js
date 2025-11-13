@@ -33,6 +33,30 @@ async function startServer() {
       console.log(`🌐 Network: Listening on all interfaces (0.0.0.0:${config.port})`);
     });
 
+    // Configure server timeouts to prevent socket hangup errors
+    server.keepAliveTimeout = 65000; // 65 seconds (slightly longer than default 60s)
+    server.headersTimeout = 66000; // 66 seconds (must be > keepAliveTimeout)
+    server.timeout = 120000; // 2 minutes for request timeout
+
+    // Handle server errors
+    server.on('error', (err) => {
+      console.error('Server error:', err);
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${config.port} is already in use`);
+        process.exit(1);
+      }
+    });
+
+    // Handle client errors (socket hangup, etc.)
+    server.on('clientError', (err, socket) => {
+      console.error('Client error:', err.message);
+      if (!socket.writable) {
+        socket.destroy();
+      } else {
+        socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+      }
+    });
+
     // Graceful shutdown
     const gracefulShutdown = (signal) => {
       console.log(`\n${signal} received. Shutting down gracefully...`);

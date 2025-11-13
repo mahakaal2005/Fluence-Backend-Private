@@ -5,11 +5,16 @@ import { loginWithPassword } from '../controllers/password.controller.js';
 import { updateAccountStatus } from '../controllers/account.controller.js';
 import { getProfile, completeProfile } from '../controllers/profile.controller.js';
 import { getActiveSessions, getSessionStats } from '../controllers/sessions.controller.js';
+import { requestPhoneOtp, verifyPhoneOtp } from '../controllers/phone.controller.js';
 
 const router = Router();
 
 // Password login
 router.post('/login', loginWithPassword);
+
+// Phone / OTP auth
+router.post('/phone/request-otp', requestPhoneOtp);
+router.post('/phone/verify-otp', verifyPhoneOtp);
 
 // Firebase-only auth endpoint
 router.post('/firebase', loginWithFirebase);

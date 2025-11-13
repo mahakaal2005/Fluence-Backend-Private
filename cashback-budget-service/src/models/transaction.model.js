@@ -226,20 +226,6 @@ export class TransactionModel {
     return result.rows;
   }
 
-  /**
-   * Get transactions by campaign ID
-   */
-  static async getTransactionsByCampaignId(campaignId, limit = 50, offset = 0) {
-    const pool = getPool();
-    const result = await pool.query(
-      `SELECT * FROM cashback_transactions 
-       WHERE campaign_id = $1 
-       ORDER BY created_at DESC 
-       LIMIT $2 OFFSET $3`,
-      [campaignId, limit, offset]
-    );
-    return result.rows;
-  }
 
   /**
    * Get transactions by status

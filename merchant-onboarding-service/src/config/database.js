@@ -18,14 +18,24 @@ function createPool() {
     ssl: process.env.MERCHANT_DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     max: parseInt(process.env.MERCHANT_DB_MAX_CONNECTIONS || '10'),
     idleTimeoutMillis: parseInt(process.env.MERCHANT_DB_IDLE_TIMEOUT || '30000'),
-    connectionTimeoutMillis: parseInt(process.env.MERCHANT_DB_CONNECTION_TIMEOUT || '15000'),
+    connectionTimeoutMillis: parseInt(process.env.MERCHANT_DB_CONNECTION_TIMEOUT || '30000'), // Increased from 15s to 30s
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
   };
 
   pool = new Pool(config);
   
+  // Handle connection errors to prevent unhandled rejections
   pool.on('error', (err) => {
     console.error('Unexpected error on idle client', err);
-    process.exit(-1);
+    // Don't exit on pool errors, just log them
+  });
+
+  // Handle connect errors
+  pool.on('connect', (client) => {
+    client.on('error', (err) => {
+      console.error('Database client error:', err);
+    });
   });
 
   return pool;

@@ -9,11 +9,13 @@ CREATE EXTENSION IF NOT EXISTS citext;
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
-  email CITEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  email CITEXT UNIQUE,
+  password_hash TEXT,
   auth_provider TEXT NOT NULL DEFAULT 'password' CHECK (auth_provider IN ('password','google','facebook','phone','guest')),
   provider_id TEXT,
-  phone TEXT,
+  phone TEXT UNIQUE,
+  phone_verified_at TIMESTAMPTZ,
+  email_verified_at TIMESTAMPTZ,
   date_of_birth DATE,
   role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','merchant','moderator')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','deleted','flagged','suspended')),
@@ -71,6 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_users_provider ON users (auth_provider, provider_
 CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);
 CREATE INDEX IF NOT EXISTS idx_users_is_approved ON users (is_approved);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users (phone);
 
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions (session_token);
@@ -91,6 +94,20 @@ CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_address ON login_attempts (ip_a
 CREATE INDEX IF NOT EXISTS idx_login_attempts_created_at ON login_attempts (created_at);
 CREATE INDEX IF NOT EXISTS idx_login_attempts_success ON login_attempts (success);
 
+-- Phone verification tokens for OTP-based login/signup
+CREATE TABLE IF NOT EXISTS phone_verification_tokens (
+  phone TEXT PRIMARY KEY,
+  otp_hash TEXT NOT NULL,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  resend_count INTEGER NOT NULL DEFAULT 1,
+  last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_phone_tokens_expires_at ON phone_verification_tokens (expires_at);
+
 -- Function to clean up expired sessions
 CREATE OR REPLACE FUNCTION cleanup_expired_sessions()
 RETURNS void AS $$
@@ -105,6 +122,7 @@ RETURNS void AS $$
 BEGIN
   DELETE FROM password_reset_tokens WHERE expires_at < NOW();
   DELETE FROM email_verification_tokens WHERE expires_at < NOW();
+  DELETE FROM phone_verification_tokens WHERE expires_at < NOW();
 END;
 $$ LANGUAGE plpgsql;
 

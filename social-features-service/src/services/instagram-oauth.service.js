@@ -5,6 +5,46 @@ import { ApiError } from '../middleware/error.js';
 import { StatusCodes } from 'http-status-codes';
 
 export class InstagramOAuthService {
+  static #uniqueConstraintEnsured = false;
+
+  static async ensureSocialPostUniquenessConstraint() {
+    if (this.#uniqueConstraintEnsured) {
+      return;
+    }
+
+    const pool = getPool();
+    try {
+      // Remove duplicate rows keeping the latest updated record
+      await pool.query(`
+        WITH ranked_posts AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY social_account_id, platform_post_id
+              ORDER BY updated_at DESC, created_at DESC
+            ) AS row_num
+          FROM social_posts
+          WHERE social_account_id IS NOT NULL
+            AND platform_post_id IS NOT NULL
+        )
+        DELETE FROM social_posts sp
+        USING ranked_posts rp
+        WHERE sp.id = rp.id
+          AND rp.row_num > 1;
+      `);
+
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_social_posts_account_post_unique
+        ON social_posts (social_account_id, platform_post_id)
+        WHERE social_account_id IS NOT NULL AND platform_post_id IS NOT NULL;
+      `);
+
+      this.#uniqueConstraintEnsured = true;
+    } catch (error) {
+      console.error('[SYNC] Failed to ensure social_posts uniqueness constraint:', error);
+      throw error;
+    }
+  }
   /**
    * Get Instagram platform ID from database
    */
@@ -64,6 +104,7 @@ export class InstagramOAuthService {
 
     // Normalize redirect URI to ensure consistency
     const normalizedRedirectUri = this.normalizeRedirectUri(redirectUri);
+    console.log('normalizedRedirectUri', normalizedRedirectUri);
 
     // Instagram Graph API with Business Login
     // OAuth authorization uses www.instagram.com, API calls use graph.instagram.com
@@ -719,9 +760,37 @@ export class InstagramOAuthService {
         }
       }
 
-      // If we found a matching transaction, link it
+      // If we found a matching transaction, check if another post is already linked to a transaction for this merchant in the last 24 hours
       if (matchingTransactionId) {
-        console.log(`[AUTO-LINK] Linking post ${postId} to transaction ${matchingTransactionId}`);
+        // Check if there's already a post linked to a transaction for this merchant in the last 24 hours
+        const checkExistingLinkQuery = `
+          SELECT sp.id as post_id, sp.original_transaction_id, sp.created_at, ct.merchant_id
+          FROM social_posts sp
+          JOIN cashback_transactions ct ON sp.original_transaction_id::uuid = ct.id
+          WHERE ct.merchant_id = ANY($1::uuid[])
+            AND sp.original_transaction_id IS NOT NULL
+            AND sp.id != $2
+            AND sp.created_at >= $3
+            AND sp.created_at <= $4
+          ORDER BY sp.created_at DESC
+          LIMIT 1
+        `;
+        
+        const existingLinkResult = await pool.query(checkExistingLinkQuery, [
+          merchantIds,
+          postId,
+          timeWindowStart, // 24 hours ago
+          now // Current time
+        ]);
+        
+        if (existingLinkResult.rows.length > 0) {
+          const existingLink = existingLinkResult.rows[0];
+          console.log(`[AUTO-LINK] ⚠️ Another post (${existingLink.post_id}) is already linked to transaction ${existingLink.original_transaction_id} for merchant ${existingLink.merchant_id} in the last 24 hours`);
+          console.log(`[AUTO-LINK] ⚠️ Skipping auto-link for post ${postId} to prevent multiple posts per merchant in 24h window`);
+          return null;
+        }
+        
+        console.log(`[AUTO-LINK] ✅ No existing post linked for this merchant in last 24 hours. Linking post ${postId} to transaction ${matchingTransactionId}`);
         
         // Update post with transaction ID
         await pool.query(
@@ -776,6 +845,7 @@ export class InstagramOAuthService {
   static async syncInstagramPosts(userId, socialAccountId, accessToken, maxPosts = 100, authToken = null) {
     try {
       const pool = getPool();
+      await this.ensureSocialPostUniquenessConstraint();
       
       // Fetch all media from Instagram
       const media = await this.getAllInstagramMedia(accessToken, maxPosts);
@@ -819,98 +889,71 @@ export class InstagramOAuthService {
         // Only process posts that have @fluencepay tagged
         const captionLower = (item.caption || '').toLowerCase();
         const hasFluencePayTag = captionLower.includes('@fluencepay');
-        
+
         if (!hasFluencePayTag) {
           console.log(`[SYNC] Post ${item.id} skipped: No @fluencepay tag found`);
           skipped++;
           continue; // Skip this post
         }
 
-        // Check if post already exists
-        const existingPost = await pool.query(
-          'SELECT id, original_transaction_id FROM social_posts WHERE social_account_id = $1 AND platform_post_id = $2',
-          [socialAccountId, item.id]
-        );
-
-        if (existingPost.rows.length > 0) {
-          const postId = existingPost.rows[0].id;
-          const existingTransactionId = existingPost.rows[0].original_transaction_id;
-
-          // Update existing post
-          await pool.query(
-            `UPDATE social_posts 
-             SET content = $1, media_urls = $2, post_type = $3,
-                 likes_count = $4, comments_count = $5,
-                 published_at = $6, updated_at = NOW()
-             WHERE id = $7`,
-            [
-              item.caption,
-              mediaUrls,
-              postType,
-              item.likeCount,
-              item.commentsCount,
-              publishedAt,
-              postId
-            ]
-          );
-
-          // Try to auto-link if not already linked and post is within last 24 hours
-          if (!existingTransactionId && mentions.length > 0 && isRecentPost) {
-            const linkedTransactionId = await this.autoLinkPostToTransaction(
-              userId,
-              postId,
-              mentions,
-              publishedAt,
-              authToken
-            );
-            if (linkedTransactionId) {
-              autoLinked++;
-            }
-          } else if (!isRecentPost && mentions.length > 0) {
-            console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
-          }
-
-          updated++;
-        } else {
-          // Create new post with pending_review status
-          const newPost = await pool.query(
-            `INSERT INTO social_posts (
+        // Upsert post to avoid duplicates
+        const upsertResult = await pool.query(
+          `INSERT INTO social_posts (
               user_id, social_account_id, platform_post_id, content, media_urls,
               post_type, status, published_at, likes_count, comments_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-            [
-              userId,
-              socialAccountId,
-              item.id,
-              item.caption,
-              mediaUrls,
-              postType,
-              'pending_review', // New posts from Instagram need admin review
-              publishedAt,
-              item.likeCount,
-              item.commentsCount
-            ]
-          );
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (social_account_id, platform_post_id)
+            DO UPDATE SET
+              content = EXCLUDED.content,
+              media_urls = EXCLUDED.media_urls,
+              post_type = EXCLUDED.post_type,
+              likes_count = EXCLUDED.likes_count,
+              comments_count = EXCLUDED.comments_count,
+              published_at = EXCLUDED.published_at,
+              updated_at = NOW()
+            RETURNING social_posts.id,
+                      social_posts.original_transaction_id,
+                      (xmax = 0) AS inserted;`,
+          [
+            userId,
+            socialAccountId,
+            item.id,
+            item.caption,
+            mediaUrls,
+            postType,
+            'pending_review',
+            publishedAt,
+            item.likeCount,
+            item.commentsCount
+          ]
+        );
 
-          const postId = newPost.rows[0].id;
+        const { id: postId, original_transaction_id: existingTransactionId, inserted } =
+          upsertResult.rows[0];
 
-          // Try to auto-link based on merchant tags (only for posts in last 24 hours)
-          if (mentions.length > 0 && isRecentPost) {
-            const linkedTransactionId = await this.autoLinkPostToTransaction(
-              userId,
-              postId,
-              mentions,
-              publishedAt,
-              authToken
-            );
-            if (linkedTransactionId) {
-              autoLinked++;
-            }
-          } else if (!isRecentPost && mentions.length > 0) {
-            console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
-          }
-
+        if (inserted) {
           created++;
+        } else {
+          updated++;
+        }
+
+        const shouldAttemptAutoLink =
+          mentions.length > 0 && isRecentPost && (!existingTransactionId || inserted);
+
+        if (shouldAttemptAutoLink) {
+          const linkedTransactionId = await this.autoLinkPostToTransaction(
+            userId,
+            postId,
+            mentions,
+            publishedAt,
+            authToken
+          );
+          if (linkedTransactionId) {
+            autoLinked++;
+          }
+        } else if (!isRecentPost && mentions.length > 0) {
+          console.log(`[SYNC] Post ${postId} is older than 24 hours, skipping auto-link`);
         }
       }
 

@@ -37,7 +37,8 @@ export async function getProfile(req, res, next) {
         email: user.email,
         phone: user.phone || null,
         date_of_birth: user.date_of_birth || null,
-        created_at: user.created_at
+        created_at: user.created_at,
+        fluence_score: user.fluence_score || 0
       }
     });
   } catch (err) {

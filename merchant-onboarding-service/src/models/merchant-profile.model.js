@@ -32,10 +32,51 @@ export class MerchantProfileModel {
    */
   static async getProfileByUserId(userId) {
     const pool = getPool();
-    const result = await pool.query(
-      'SELECT * FROM merchant_profiles WHERE user_id = $1',
+    console.log('[DB_QUERY] getProfileByUserId:', {
+      userId: userId,
+      userIdType: typeof userId,
+      query: 'SELECT * FROM merchant_profiles WHERE id = $1'
+    });
+    
+    // Ensure userId is treated as UUID (PostgreSQL will handle string UUIDs)
+    // Try exact match first
+    let result = await pool.query(
+      'SELECT * FROM merchant_profiles WHERE id = $1::uuid',
       [userId]
     );
+    
+    // If no result, try without explicit cast (in case of type mismatch)
+    if (result.rows.length === 0) {
+      console.log('[DB_QUERY] No result with UUID cast, trying without cast');
+      result = await pool.query(
+        'SELECT * FROM merchant_profiles WHERE id::text = $1',
+        [String(userId)]
+      );
+    }
+    
+    // Debug: Check all profiles to see what user_ids exist (for debugging only)
+    if (result.rows.length === 0) {
+      const allProfiles = await pool.query(
+        'SELECT id, user_id, business_name, email FROM merchant_profiles LIMIT 10'
+      );
+      console.log('[DB_QUERY] Sample profiles in DB:', {
+        totalChecked: allProfiles.rows.length,
+        sampleUserIds: allProfiles.rows.map(r => ({
+          profileId: r.id,
+          userId: r.user_id,
+          userIdType: typeof r.user_id,
+          businessName: r.business_name,
+          email: r.email
+        }))
+      });
+    }
+    
+    console.log('[DB_QUERY] getProfileByUserId result:', {
+      userId: userId,
+      rowsFound: result.rows.length,
+      profileIds: result.rows.map(r => ({ id: r.id, user_id: r.user_id }))
+    });
+    
     return result.rows[0] || null;
   }
 
@@ -325,6 +366,52 @@ export class MerchantProfileModel {
        FROM merchant_profiles 
        GROUP BY status`
     );
+    return result.rows;
+  }
+
+  /**
+   * Get top merchants ranked by total cashback amount
+   * @param {number} limit - maximum number of merchants to return
+   * @param {object} options - additional filter options
+   * @param {number|null} options.timeframeDays - restrict to cashback awarded within the last N days
+   * @returns {Promise<Array>}
+   */
+  static async getTopMerchantsByCashback(limit = 10, { timeframeDays = null } = {}) {
+    const pool = getPool();
+
+    const params = [limit];
+    let timeframeCondition = '';
+
+    if (typeof timeframeDays === 'number' && timeframeDays > 0) {
+      params.push(timeframeDays);
+      timeframeCondition = `AND ct.created_at >= NOW() - ($${params.length}::int * INTERVAL '1 day')`;
+    }
+
+    const query = `
+      SELECT 
+        mp.id,
+        mp.business_name,
+        mp.business_type,
+        mp.status,
+        mp.created_at,
+        COALESCE(SUM(ct.cashback_amount), 0) AS total_cashback_awarded,
+        COUNT(ct.id) AS cashback_transactions,
+        MAX(ct.created_at) AS last_cashback_awarded_at
+      FROM merchant_profiles mp
+      LEFT JOIN cashback_transactions ct
+        ON ct.merchant_id = mp.id
+        AND ct.status IN ('processed', 'pending')
+        ${timeframeCondition}
+      WHERE mp.status = 'active'
+      GROUP BY mp.id
+      HAVING COALESCE(SUM(ct.cashback_amount), 0) > 0
+      ORDER BY total_cashback_awarded DESC,
+               cashback_transactions DESC,
+               mp.business_name ASC
+      LIMIT $1
+    `;
+
+    const result = await pool.query(query, params);
     return result.rows;
   }
 

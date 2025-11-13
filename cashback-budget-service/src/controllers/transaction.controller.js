@@ -17,7 +17,7 @@ export class TransactionController {
         });
       }
 
-      const { amount, type, merchantId, campaignId, customerId, description, metadata } = req.body;
+      const { amount, type, merchantId, customerId, description, metadata, cashbackPercentage } = req.body;
 
       if (type !== 'cashback') {
         throw new Error('Only cashback transactions are supported');
@@ -30,38 +30,31 @@ export class TransactionController {
         });
       }
 
-      // Get campaign - use provided campaignId or find active campaign for merchant
-      const { CampaignModel } = await import('../models/campaign.model.js');
-      let campaign = null;
+      // Get merchant funds and check availability
+      const { MerchantFundsModel } = await import('../models/merchant-funds.model.js');
+      const funds = await MerchantFundsModel.getOrCreateFunds(merchantId);
 
-      if (campaignId) {
-        // If campaignId is provided, use it
-        campaign = await CampaignModel.getCampaignById(campaignId);
-        if (!campaign) {
-          return res.status(404).json({ 
-            success: false, 
-            error: 'Campaign not found' 
-          });
-        }
-        // Verify campaign belongs to the merchant
-        if (campaign.merchant_id !== merchantId) {
-          return res.status(400).json({ 
-            success: false, 
-            error: 'Campaign does not belong to the specified merchant' 
-          });
-        }
-      } else {
-        // If no campaignId provided, find active campaign for merchant
-        const activeCampaigns = await CampaignModel.getActiveCampaignsByMerchantId(merchantId);
-        if (activeCampaigns.length === 0) {
-          return res.status(404).json({ 
-            success: false, 
-            error: 'No active campaign found for this merchant' 
-          });
-        }
-        // Use the first (most recent) active campaign
-        campaign = activeCampaigns[0];
-        console.log(`[TRANSACTION] Using active campaign ${campaign.id} for merchant ${merchantId}`);
+      if (!funds || funds.status !== 'active') {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Merchant funds are not active' 
+        });
+      }
+
+      // Use provided cashback percentage or merchant's default
+      const percentage = cashbackPercentage || funds.cashback_percentage || 5.00;
+      
+      // Calculate cashback amount
+      const cashbackAmount = (parseFloat(amount) * parseFloat(percentage)) / 100;
+
+      // Check if merchant has sufficient funds
+      if (!await MerchantFundsModel.hasSufficientFunds(merchantId, cashbackAmount)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Insufficient funds available for cashback',
+          available: funds.current_balance,
+          required: cashbackAmount
+        });
       }
 
       // Get merchant name for notification (optional)
@@ -93,12 +86,12 @@ export class TransactionController {
       const originalTransactionId = req.body.originalTransactionId || randomUUID();
 
       const transaction = await TransactionModel.createTransaction({
-        merchantId: merchantId, // Use merchantId from request
-        campaignId: campaign.id, // Use the campaign ID (either provided or found)
+        merchantId: merchantId,
+        campaignId: null, // No longer using campaigns
         customerId,
         originalTransactionId,
-        cashbackAmount: amount,
-        cashbackPercentage: campaign.cashback_percentage
+        cashbackAmount: cashbackAmount, // Use calculated cashback amount
+        cashbackPercentage: percentage
       });
 
       // Send transaction completion notification
@@ -108,7 +101,7 @@ export class TransactionController {
           transaction.id,
           amount,
           merchantName,
-          description || campaign.campaign_name || 'Cashback transaction'
+          description || 'Cashback transaction'
         );
       } catch (notificationErr) {
         // Do not block transaction creation if notification fails
@@ -689,7 +682,26 @@ export class TransactionController {
       }
       
   
-      // 🔹 STEP 2: Process the transaction only after wallet call completes successfully
+      // 🔹 STEP 2: Deduct funds from merchant account
+      const { MerchantFundsModel } = await import('../models/merchant-funds.model.js');
+      try {
+        await MerchantFundsModel.deductFunds(
+          transaction.merchant_id,
+          transaction.cashback_amount,
+          req.user?.id || 'system',
+          `Cashback payout for transaction ${transaction.id}`
+        );
+        console.log(`[TRANSACTION] Deducted ${transaction.cashback_amount} from merchant ${transaction.merchant_id} funds`);
+      } catch (fundsErr) {
+        console.error('Failed to deduct funds:', fundsErr.message);
+        return res.status(400).json({
+          success: false,
+          error: 'Failed to deduct funds',
+          message: fundsErr.message
+        });
+      }
+
+      // 🔹 STEP 3: Process the transaction only after funds are deducted
       const processedTransaction = await TransactionModel.process(id);
   
       res.json({
