@@ -133,15 +133,50 @@ export class NotificationModel {
   }
 
   /**
-   * Get unread notification count
+   * Get unseen admin notification count
+   * Only counts notifications RECEIVED by admin (not sent by admin)
+   * Filters by metadata category starting with 'admin_' (admin_new_post, admin_new_merchant_application, etc.)
    */
   static async getUnreadCount(userId) {
     const pool = getPool();
-    const result = await pool.query(
-      'SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND read_at IS NULL',
+    // Count notifications RECEIVED by admin (not sent by admin)
+    // Admin SENT notifications have metadata->>'sentBy' = admin_user_id
+    // Admin RECEIVED notifications have metadata->>'sentBy' != admin_user_id OR NULL
+    // Also include notifications with admin_ category or admin subject patterns for backward compatibility
+    
+    // Debug: Check what notifications exist
+    const debugResult = await pool.query(
+      `SELECT id, subject, metadata->>'sentBy' as sentBy, metadata->>'category' as category, opened_at 
+       FROM notifications 
+       WHERE user_id = $1 AND opened_at IS NULL 
+       LIMIT 10`,
       [userId]
     );
-    return parseInt(result.rows[0].count);
+    console.log(`[getUnreadCount] Found ${debugResult.rows.length} unopened notifications for user ${userId}`);
+    debugResult.rows.forEach((row, idx) => {
+      console.log(`  [${idx + 1}] ${row.subject} - sentBy: ${row.sentBy || 'NULL'} - category: ${row.category || 'NULL'} - opened_at: ${row.opened_at || 'NULL'}`);
+    });
+    
+    const result = await pool.query(
+      `SELECT COUNT(*) as count 
+       FROM notifications 
+       WHERE user_id = $1 
+         AND opened_at IS NULL 
+         AND (
+           -- Not sent by this admin (received notifications)
+           (metadata->>'sentBy' IS NULL OR metadata->>'sentBy' != $1::text)
+           OR
+           -- Admin category notifications (backward compatibility)
+           (metadata IS NOT NULL AND metadata->>'category' LIKE 'admin_%')
+           OR
+           -- Admin notification subject patterns (backward compatibility)
+           (subject LIKE 'New Merchant Application%' OR subject LIKE 'New Social Post%')
+         )`,
+      [userId]
+    );
+    const count = parseInt(result.rows[0].count);
+    console.log(`[getUnreadCount] Query returned count: ${count} for user ${userId}`);
+    return count;
   }
 
   /**
@@ -170,6 +205,56 @@ export class NotificationModel {
        WHERE user_id = $1 AND read_at IS NULL RETURNING *`,
       [userId]
     );
+    return result.rows;
+  }
+
+  /**
+   * Mark all admin notifications as opened/viewed (sets opened_at)
+   * This is called when admin views their notifications list
+   * Only marks notifications RECEIVED by admin (not sent by admin)
+   */
+  static async markAllAsOpened(userId) {
+    const pool = getPool();
+    // Mark all notifications RECEIVED by admin as opened (not sent by admin)
+    // Admin SENT notifications have metadata->>'sentBy' = admin_user_id
+    // Admin RECEIVED notifications have metadata->>'sentBy' != admin_user_id OR NULL
+    // Also include notifications with admin_ category or admin subject patterns for backward compatibility
+    
+    // Debug: Check what notifications exist before update
+    const beforeResult = await pool.query(
+      `SELECT id, subject, metadata->>'sentBy' as sentBy, metadata->>'category' as category, opened_at 
+       FROM notifications 
+       WHERE user_id = $1 AND opened_at IS NULL 
+       LIMIT 10`,
+      [userId]
+    );
+    console.log(`[markAllAsOpened] Found ${beforeResult.rows.length} unopened notifications for user ${userId}`);
+    beforeResult.rows.forEach((row, idx) => {
+      console.log(`  [${idx + 1}] ${row.subject} - sentBy: ${row.sentBy || 'NULL'} - category: ${row.category || 'NULL'}`);
+    });
+    
+    const result = await pool.query(
+      `UPDATE notifications 
+       SET opened_at = COALESCE(opened_at, NOW()) 
+       WHERE user_id = $1 
+         AND opened_at IS NULL 
+         AND (
+           -- Not sent by this admin (received notifications)
+           (metadata->>'sentBy' IS NULL OR metadata->>'sentBy' != $1::text)
+           OR
+           -- Admin category notifications (backward compatibility)
+           (metadata IS NOT NULL AND metadata->>'category' LIKE 'admin_%')
+           OR
+           -- Admin notification subject patterns (backward compatibility)
+           (subject LIKE 'New Merchant Application%' OR subject LIKE 'New Social Post%')
+         )
+       RETURNING *`,
+      [userId]
+    );
+    console.log(`[markAllAsOpened] Updated ${result.rows.length} notifications as opened for user ${userId}`);
+    if (result.rows.length > 0) {
+      console.log(`[markAllAsOpened] Updated notification IDs: ${result.rows.map(r => r.id).join(', ')}`);
+    }
     return result.rows;
   }
 

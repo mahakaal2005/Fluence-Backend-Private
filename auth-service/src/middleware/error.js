@@ -18,6 +18,32 @@ export function errorHandler(err, _req, res, _next) {
     return;
   }
   
+  // Handle PostgreSQL errors
+  if (err.code) {
+    console.error('Database error:', {
+      code: err.code,
+      message: err.message,
+      detail: err.detail,
+      hint: err.hint
+    });
+    
+    // Check constraint violation
+    if (err.code === '23514') {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: 'Database constraint violation',
+        message: err.message || 'Invalid data provided',
+        detail: err.detail
+      });
+    }
+    
+    // Other database errors
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Database error occurred' 
+        : `Database error: ${err.message}`
+    });
+  }
+  
   // Log full error in development, sanitized in production
   if (process.env.NODE_ENV === 'production') {
     console.error('Unhandled error:', err.message);

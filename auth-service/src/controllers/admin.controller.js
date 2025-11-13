@@ -1,7 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { z } from 'zod';
 import { ApiError } from '../middleware/error.js';
-import { createUser, findUserByEmail, findUserById, updateUserApprovalStatus } from '../models/user.model.js';
+import { createUser, findUserByEmail, findUserById, updateUserApprovalStatus, updateUserStatus } from '../models/user.model.js';
 import { signToken } from '../utils/jwt.js';
 import { getPool } from '../db/pool.js';
 import bcrypt from 'bcrypt';
@@ -259,6 +259,13 @@ export async function suspendUser(req, res, next) {
     }
 
     const updatedUser = await updateUserStatus(userId, 'suspended');
+    
+    if (!updatedUser) {
+      throw new ApiError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        'Failed to update user status. No rows were affected.'
+      );
+    }
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -271,6 +278,13 @@ export async function suspendUser(req, res, next) {
       }
     });
   } catch (err) {
+    // Log the error for debugging
+    console.error('Error in suspendUser:', {
+      userId: req.params.userId,
+      error: err.message,
+      code: err.code,
+      detail: err.detail
+    });
     next(err);
   }
 }

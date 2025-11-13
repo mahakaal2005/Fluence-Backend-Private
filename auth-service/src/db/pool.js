@@ -26,6 +26,15 @@ export function getPool() {
   return pool;
 }
 
+// Function to clear the pool (useful after migrations)
+export async function clearPool() {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    console.log('Database connection pool cleared');
+  }
+}
+
 export async function migrate() {
   const client = await getPool().connect();
   try {

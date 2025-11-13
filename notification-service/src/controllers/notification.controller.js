@@ -76,7 +76,29 @@ export class NotificationController {
   }
 
   /**
-   * Get unread notification count
+   * Mark all notifications as opened/viewed
+   * This is called when user views their notifications list
+   */
+  static async markAllAsOpened(req, res, next) {
+    try {
+      const userId = req.user.id;
+
+      const notifications = await NotificationService.markAllAsOpened(userId);
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        message: `${notifications.length} notifications marked as opened`,
+        data: { count: notifications.length }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get unseen admin notification count
+   * Only counts notifications RECEIVED by admin (not sent by admin)
+   * Filters by metadata category starting with 'admin_' (admin_new_post, admin_new_merchant_application, etc.)
    */
   static async getUnreadCount(req, res, next) {
     try {

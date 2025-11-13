@@ -92,6 +92,14 @@ export class NotificationService {
   }
 
   /**
+   * Mark all notifications as opened/viewed
+   * This is called when user views their notifications list
+   */
+  static async markAllAsOpened(userId) {
+    return await NotificationModel.markAllAsOpened(userId);
+  }
+
+  /**
    * Get notifications by type
    */
   static async getNotificationsByType(userId, type, limit = 20) {
