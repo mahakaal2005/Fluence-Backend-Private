@@ -23,6 +23,7 @@ router.get('/stats', NotificationController.getNotificationStats);
 // Notification actions
 router.put('/:notificationId/read', NotificationController.markAsRead);
 router.put('/read-all', NotificationController.markAllAsRead);
+router.put('/opened-all', NotificationController.markAllAsOpened);
 router.delete('/:notificationId', NotificationController.deleteNotification);
 
 // Notification settings

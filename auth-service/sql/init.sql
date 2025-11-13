@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   email_verified_at TIMESTAMPTZ,
   date_of_birth DATE,
   role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin','merchant','moderator')),
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','deleted','flagged')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','deleted','flagged','suspended')),
   is_approved BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

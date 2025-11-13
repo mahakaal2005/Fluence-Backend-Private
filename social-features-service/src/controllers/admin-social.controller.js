@@ -43,18 +43,18 @@ export class AdminSocialController {
       console.log('📝 [ADMIN_POSTS] Get all posts request');
       console.log('   Query params:', req.query);
 
-      const { 
-        limit = 50, 
-        offset = 0, 
-        status, 
-        platformId, 
+      const {
+        limit = 50,
+        offset = 0,
+        status,
+        platformId,
         userId,
         startDate,
         endDate,
         postType,
         search
       } = req.query;
-      
+
       const pool = getPool();
 
       let query = `
