@@ -39,6 +39,7 @@ app.use(helmet());
 app.use(securityHeaders());
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 if (config.nodeEnv !== 'production') {
   app.use(morgan('dev'));
