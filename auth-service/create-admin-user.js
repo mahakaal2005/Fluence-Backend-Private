@@ -5,7 +5,7 @@
  * Usage: node create-admin-user.js
  */
 
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { getPool } from './src/db/pool.js';
 import { createUser } from './src/models/user.model.js';
 import readline from 'readline';

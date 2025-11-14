@@ -1,22 +1,6 @@
 version: '3.8'
 
 services:
-  # Redis for caching and message queuing
-  redis:
-    image: redis:7-alpine
-    container_name: fluence-pay-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - fluence-pay-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Auth Service
   auth-service:
     build:
@@ -34,15 +18,17 @@ services:
       - DB_USER=bp-user
       - DB_PASSWORD=k?b0fY3ZB!lB6lJiB*7EqaK
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - fluence-pay-network
     volumes:
       - ./auth-service:/app
       - /app/node_modules
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     restart: unless-stopped
 
   # Merchant Onboarding Service
@@ -71,7 +57,7 @@ services:
       - SMTP_FROM=noreply@fluencepay.com
     depends_on:
       auth-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - fluence-pay-network
     volumes:
@@ -99,10 +85,9 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:4001
       - MERCHANT_SERVICE_URL=http://merchant-onboarding-service:4003
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
-      - REDIS_URL=redis://redis:6379
     depends_on:
       auth-service:
-        condition: service_started
+        condition: service_healthy
       merchant-onboarding-service:
         condition: service_started
     networks:
@@ -143,7 +128,7 @@ services:
       - FIREBASE_SERVER_KEY=your-firebase-server-key
     depends_on:
       auth-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - fluence-pay-network
     volumes:
@@ -172,12 +157,9 @@ services:
       - REFERRAL_SERVICE_URL=http://referral-service:4006
       - SOCIAL_SERVICE_URL=http://social-features-service:4007
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
-      - REDIS_URL=redis://redis:6379
     depends_on:
-      redis:
-        condition: service_healthy
       auth-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - fluence-pay-network
     volumes:
@@ -206,12 +188,9 @@ services:
       - POINTS_SERVICE_URL=http://points-wallet-service:4005
       - SOCIAL_SERVICE_URL=http://social-features-service:4007
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
-      - REDIS_URL=redis://redis:6379
     depends_on:
-      redis:
-        condition: service_healthy
       auth-service:
-        condition: service_started
+        condition: service_healthy
       points-wallet-service:
         condition: service_started
     networks:
@@ -242,7 +221,6 @@ services:
       - POINTS_SERVICE_URL=http://points-wallet-service:4005
       - REFERRAL_SERVICE_URL=http://referral-service:4006
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
-      - REDIS_URL=redis://redis:6379
       - FACEBOOK_APP_ID=your-facebook-app-id
       - FACEBOOK_APP_SECRET=your-facebook-app-secret
       - TWITTER_CLIENT_ID=your-twitter-client-id
@@ -254,10 +232,8 @@ services:
       - TIKTOK_CLIENT_KEY=your-tiktok-client-key
       - TIKTOK_CLIENT_SECRET=your-tiktok-client-secret
     depends_on:
-      redis:
-        condition: service_healthy
       auth-service:
-        condition: service_started
+        condition: service_healthy
       points-wallet-service:
         condition: service_started
       referral-service:
@@ -287,9 +263,6 @@ services:
     networks:
       - fluence-pay-network
     restart: unless-stopped
-
-volumes:
-  redis_data:
 
 networks:
   fluence-pay-network:

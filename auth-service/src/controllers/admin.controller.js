@@ -4,7 +4,7 @@ import { ApiError } from '../middleware/error.js';
 import { createUser, findUserByEmail, findUserById, updateUserApprovalStatus, updateUserStatus } from '../models/user.model.js';
 import { signToken } from '../utils/jwt.js';
 import { getPool } from '../db/pool.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 const approveSchema = z.object({
   adminNotes: z.string().optional()

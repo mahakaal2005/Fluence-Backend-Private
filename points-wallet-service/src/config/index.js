@@ -25,15 +25,6 @@ export function getConfig() {
     expiresIn: process.env.JWT_EXPIRES_IN || (nodeEnv === 'production' ? '1h' : '1d')
   };
 
-  // Redis configuration
-  const redis = {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: Number(process.env.REDIS_PORT || 6379),
-    password: process.env.REDIS_PASSWORD || '',
-    db: Number(process.env.REDIS_DB || 0),
-    url: process.env.REDIS_URL || 'redis://localhost:6379'
-  };
-
   // Service URLs
   const services = {
     auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4001',
@@ -78,7 +69,6 @@ export function getConfig() {
     port, 
     db, 
     jwt, 
-    redis,
     services, 
     points,
     wallet,
