@@ -130,15 +130,26 @@ export async function verifyPhoneOtp(req, res, next) {
       const defaultName = name?.trim() || `Fluence User ${normalizedPhone.slice(-4)}`;
       const fallbackEmail = normalizedEmail || `phone-user-${normalizedPhone}@pending.fluence`;
 
-      user = await createUser({
-        name: defaultName,
-        email: fallbackEmail,
-        password_hash: placeholderPassword,
-        auth_provider: 'phone',
-        phone: normalizedPhone,
-        phone_verified_at: new Date(),
-        status: 'active'
-      });
+      try {
+        user = await createUser({
+          name: defaultName,
+          email: fallbackEmail,
+          password_hash: placeholderPassword,
+          auth_provider: 'phone',
+          phone: normalizedPhone,
+          phone_verified_at: new Date(),
+          status: 'active'
+        });
+      } catch (dbError) {
+        // Handle database unique constraint violation
+        if (dbError.code === '23505' && dbError.constraint === 'users_phone_key') {
+          throw new ApiError(StatusCodes.CONFLICT, 'Phone number already exists');
+        }
+        if (dbError.code === '23505' && dbError.constraint === 'users_email_key') {
+          throw new ApiError(StatusCodes.CONFLICT, 'Email already exists');
+        }
+        throw dbError;
+      }
     } else {
       await markPhoneVerified(user.id);
       if (normalizedEmail) {

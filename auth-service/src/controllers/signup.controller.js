@@ -23,20 +23,41 @@ export async function signup(req, res, next) {
       throw new ApiError(StatusCodes.CONFLICT, 'User with this email already exists');
     }
 
+    // Check if phone already exists (if provided)
+    if (phone) {
+      const { findUserByPhone } = await import('../models/user.model.js');
+      const existingPhoneUser = await findUserByPhone(phone);
+      if (existingPhoneUser) {
+        throw new ApiError(StatusCodes.CONFLICT, 'Phone number already exists');
+      }
+    }
+
     // Hash password
     const password_hash = await hashPassword(password);
 
     // Create user
-    const user = await createUser({
-      name,
-      email,
-      password_hash,
-      auth_provider: 'password',
-      phone: phone || null,
-      role: 'user',
-      status: 'active',
-      is_approved: false
-    });
+    let user;
+    try {
+      user = await createUser({
+        name,
+        email,
+        password_hash,
+        auth_provider: 'password',
+        phone: phone || null,
+        role: 'user',
+        status: 'active',
+        is_approved: false
+      });
+    } catch (dbError) {
+      // Handle database unique constraint violation
+      if (dbError.code === '23505' && dbError.constraint === 'users_phone_key') {
+        throw new ApiError(StatusCodes.CONFLICT, 'Phone number already taken');
+      }
+      if (dbError.code === '23505' && dbError.constraint === 'users_email_key') {
+        throw new ApiError(StatusCodes.CONFLICT, 'Email already exists');
+      }
+      throw dbError;
+    }
 
     // Generate JWT token
     const token = signToken({ sub: user.id, email: user.email, role: user.role });

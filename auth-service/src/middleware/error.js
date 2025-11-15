@@ -28,6 +28,27 @@ export function errorHandler(err, _req, res, _next) {
     return;
   }
   
+  // Handle database unique constraint violations
+  if (err.code === '23505') {
+    const constraint = err.constraint || '';
+    let errorMessage = 'Duplicate entry';
+    
+    if (constraint.includes('phone')) {
+      errorMessage = 'Phone number already exists';
+    } else if (constraint.includes('email')) {
+      errorMessage = 'Email already exists';
+    } else if (err.detail?.includes('phone')) {
+      errorMessage = 'Phone number already taken';
+    } else if (err.detail?.includes('email')) {
+      errorMessage = 'Email already taken';
+    }
+    
+    res.status(StatusCodes.CONFLICT).json({ 
+      error: errorMessage
+    });
+    return;
+  }
+  
   // Handle query timeout errors
   if (err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
     console.error('Database query timeout:', err.message);
