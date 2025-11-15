@@ -125,7 +125,6 @@ services:
       - TWILIO_ACCOUNT_SID=your-twilio-account-sid
       - TWILIO_AUTH_TOKEN=your-twilio-auth-token
       - TWILIO_FROM_NUMBER=+1234567890
-      - FIREBASE_SERVER_KEY=your-firebase-server-key
     depends_on:
       auth-service:
         condition: service_healthy

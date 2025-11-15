@@ -19,7 +19,7 @@ export async function loginWithPassword(req, res, next) {
       throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid email or password');
     }
 
-    if (!user.password_hash || user.password_hash === 'firebase-login') {
+    if (!user.password_hash) {
       throw new ApiError(StatusCodes.BAD_REQUEST, 'Password login not enabled for this account');
     }
 

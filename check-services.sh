@@ -26,3 +26,5 @@ docker-compose exec -T nginx tail -20 /var/log/nginx/error.log 2>/dev/null || ec
 
 
 
+
+
