@@ -4,6 +4,7 @@ import { findUserByEmail, createUser } from '../models/user.model.js';
 import { hashPassword } from '../utils/crypto.js';
 import { signToken } from '../utils/jwt.js';
 import { ApiError } from '../middleware/error.js';
+import { isProfileComplete } from '../utils/profile.js';
 
 const signupSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(120, 'Name must be less than 120 characters'),
@@ -40,6 +41,9 @@ export async function signup(req, res, next) {
     // Generate JWT token
     const token = signToken({ sub: user.id, email: user.email, role: user.role });
 
+    // Check if profile is complete
+    const profileComplete = isProfileComplete(user);
+
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: 'User created successfully',
@@ -51,7 +55,8 @@ export async function signup(req, res, next) {
         role: user.role,
         status: user.status
       },
-      token
+      token,
+      completeProfile: profileComplete
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

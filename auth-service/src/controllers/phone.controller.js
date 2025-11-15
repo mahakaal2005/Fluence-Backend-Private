@@ -20,6 +20,7 @@ import {
   updateUserEmailIfMissing
 } from '../models/user.model.js';
 import { sendOtpSms, normalizePhoneNumber } from '../services/msg91.service.js';
+import { isProfileComplete } from '../utils/profile.js';
 
 const requestOtpSchema = z.object({
   phone: z.string().min(6, 'Phone number is required').max(20, 'Phone number is too long')
@@ -43,9 +44,6 @@ function generateOtp(length = OTP_LENGTH) {
   return String(Math.floor(Math.random() * (max - min + 1)) + min);
 }
 
-function requiresProfileCompletion(user) {
-  return !user?.email || !user?.name || user.name.toLowerCase().startsWith('fluence user');
-}
 
 export async function requestPhoneOtp(req, res, next) {
   try {
@@ -155,6 +153,9 @@ export async function verifyPhoneOtp(req, res, next) {
       role: user.role
     });
 
+    // Check if profile is complete
+    const profileComplete = isProfileComplete(user);
+
     res.status(StatusCodes.OK).json({
       success: true,
       token,
@@ -167,7 +168,7 @@ export async function verifyPhoneOtp(req, res, next) {
         emailVerified: Boolean(user.email_verified_at),
         status: user.status
       },
-      requiresProfileCompletion: requiresProfileCompletion(user)
+      completeProfile: profileComplete
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

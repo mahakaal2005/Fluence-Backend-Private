@@ -4,6 +4,7 @@ import { findUserByEmail } from '../models/user.model.js';
 import { comparePassword } from '../utils/crypto.js';
 import { signToken } from '../utils/jwt.js';
 import { ApiError } from '../middleware/error.js';
+import { isProfileComplete } from '../utils/profile.js';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -34,6 +35,9 @@ export async function loginWithPassword(req, res, next) {
 
     const token = signToken({ sub: user.id, email: user.email, role: user.role });
 
+    // Check if profile is complete
+    const profileComplete = isProfileComplete(user);
+
     res.status(StatusCodes.OK).json({
       success: true,
       user: {
@@ -43,7 +47,8 @@ export async function loginWithPassword(req, res, next) {
         role: user.role,
         status: user.status
       },
-      token
+      token,
+      completeProfile: profileComplete
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

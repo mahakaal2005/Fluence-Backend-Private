@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ApiError } from '../middleware/error.js';
 import { updateUserProfile, findUserById } from '../models/user.model.js';
 import { signToken } from '../utils/jwt.js';
+import { isProfileComplete } from '../utils/profile.js';
 
 const profileSchema = z.object({
   name: z.string().min(1).max(120),
@@ -67,6 +68,9 @@ export async function completeProfile(req, res, next) {
     // Generate new token with updated email
     const token = signToken({ sub: updatedUser.id, email: updatedUser.email });
 
+    // Check if profile is complete
+    const profileComplete = isProfileComplete(updatedUser);
+
     res.status(StatusCodes.OK).json({
       user: {
         id: updatedUser.id,
@@ -77,6 +81,7 @@ export async function completeProfile(req, res, next) {
         created_at: updatedUser.created_at
       },
       token,
+      completeProfile: profileComplete,
       message: 'Profile completed successfully'
     });
   } catch (err) {
