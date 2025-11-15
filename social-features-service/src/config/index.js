@@ -27,11 +27,11 @@ export function getConfig() {
 
   // Service URLs
   const services = {
-    auth: process.env.AUTH_SERVICE_URL || 'http://161.248.37.235:4001',
-    points: process.env.POINTS_SERVICE_URL || 'http://161.248.37.235:4005',
-    referral: process.env.REFERRAL_SERVICE_URL || 'http://161.248.37.235:4006',
-    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://161.248.37.235:4004',
-    merchant: process.env.MERCHANT_ONBOARDING_SERVICE_URL || 'http://161.248.37.235:4003'
+    auth: process.env.AUTH_SERVICE_URL || 'http://auth-service:4001',
+    points: process.env.POINTS_SERVICE_URL || 'http://points-wallet-service:4005',
+    referral: process.env.REFERRAL_SERVICE_URL || 'http://referral-service:4006',
+    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:4004',
+    merchant: process.env.MERCHANT_ONBOARDING_SERVICE_URL || 'http://merchant-onboarding-service:4003'
   };
 
   // Social media configuration

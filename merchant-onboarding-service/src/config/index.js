@@ -37,9 +37,9 @@ export function getConfig() {
 
   // Service URLs
   const services = {
-    auth: process.env.AUTH_SERVICE_URL || 'http://161.248.37.235:4001',
-    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://161.248.37.235:4004',
-    cashback: process.env.CASHBACK_SERVICE_URL || 'http://161.248.37.235:4003'
+    auth: process.env.AUTH_SERVICE_URL || 'http://auth-service:4001',
+    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:4004',
+    cashback: process.env.CASHBACK_SERVICE_URL || 'http://cashback-budget-service:4002'
   };
 
   // Application settings
