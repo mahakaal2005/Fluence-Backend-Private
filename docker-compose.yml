@@ -224,8 +224,8 @@ services:
       - FACEBOOK_APP_SECRET=your-facebook-app-secret
       - TWITTER_CLIENT_ID=your-twitter-client-id
       - TWITTER_CLIENT_SECRET=your-twitter-client-secret
-      - INSTAGRAM_APP_ID=your-instagram-app-id
-      - INSTAGRAM_APP_SECRET=your-instagram-app-secret
+      - INSTAGRAM_APP_ID=1585133132867046
+      - INSTAGRAM_APP_SECRET=33a6d7ec2cc6474336264a5b5c9b34bd
       - LINKEDIN_CLIENT_ID=your-linkedin-client-id
       - LINKEDIN_CLIENT_SECRET=your-linkedin-client-secret
       - TIKTOK_CLIENT_KEY=your-tiktok-client-key
