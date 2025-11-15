@@ -27,10 +27,10 @@ export function getConfig() {
 
   // Service URLs
   const services = {
-    auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4001',
-    points: process.env.POINTS_SERVICE_URL || 'http://localhost:4005',
-    social: process.env.SOCIAL_SERVICE_URL || 'http://localhost:4007',
-    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4004'
+    auth: process.env.AUTH_SERVICE_URL || 'http://161.248.37.235:4001',
+    points: process.env.POINTS_SERVICE_URL || 'http://161.248.37.235:4005',
+    social: process.env.SOCIAL_SERVICE_URL || 'http://161.248.37.235:4007',
+    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://161.248.37.235:4004'
   };
 
   // Referral system configuration

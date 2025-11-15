@@ -52,9 +52,9 @@ export function getConfig() {
 
   // Service URLs
   const services = {
-    auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4001',
-    merchant: process.env.MERCHANT_SERVICE_URL || 'http://localhost:4002',
-    cashback: process.env.CASHBACK_SERVICE_URL || 'http://localhost:4003'
+    auth: process.env.AUTH_SERVICE_URL || 'http://161.248.37.235:4001',
+    merchant: process.env.MERCHANT_SERVICE_URL || 'http://161.248.37.235:4002',
+    cashback: process.env.CASHBACK_SERVICE_URL || 'http://161.248.37.235:4003'
   };
 
   // Notification settings

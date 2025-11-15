@@ -37,10 +37,10 @@ export function getConfig() {
 
   // Service URLs
   const services = {
-    auth: process.env.AUTH_SERVICE_URL || 'http://localhost:4001',
-    merchant: process.env.MERCHANT_SERVICE_URL || 'http://localhost:4003',
-    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4004',
-    points: process.env.POINTS_WALLET_SERVICE_URL || 'http://localhost:4005'
+    auth: process.env.AUTH_SERVICE_URL || 'http://161.248.37.235:4001',
+    merchant: process.env.MERCHANT_SERVICE_URL || 'http://161.248.37.235:4003',
+    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://161.248.37.235:4004',
+    points: process.env.POINTS_WALLET_SERVICE_URL || 'http://161.248.37.235:4005'
   };
 
   // Financial settings
