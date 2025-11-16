@@ -32,6 +32,15 @@ export function getConfig() {
     defaultCountryCode: process.env.MSG91_DEFAULT_COUNTRY_CODE || '91'
   };
 
-  return { nodeEnv, port, pg, jwt, msg91, rateLimitWindowMs, rateLimitMax };
+  // Service URLs
+  const services = {
+    merchant: process.env.MERCHANT_SERVICE_URL || 'http://merchant-onboarding-service:4003',
+    social: process.env.SOCIAL_SERVICE_URL || 'http://social-features-service:4007',
+    points: process.env.POINTS_WALLET_SERVICE_URL || 'http://points-wallet-service:4005',
+    cashback: process.env.CASHBACK_BUDGET_SERVICE_URL || 'http://cashback-budget-service:4002',
+    notification: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:4004'
+  };
+
+  return { nodeEnv, port, pg, jwt, msg91, services, rateLimitWindowMs, rateLimitMax };
 }
 

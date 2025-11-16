@@ -1,11 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 import { signToken } from '../utils/jwt.js';
+import { getConfig } from '../config/index.js';
 console.log('✅ signToken import check:', typeof signToken);
-
-// Points Wallet Service URL
-const POINTS_WALLET_SERVICE_URL = process.env.POINTS_WALLET_SERVICE_URL || 'http://localhost:4005';
-const CASHBACK_BUDGET_SERVICE_URL = process.env.CASHBACK_BUDGET_SERVICE_URL || 'http://localhost:4002';
-const SOCIAL_FEATURES_SERVICE_URL = process.env.SOCIAL_FEATURES_SERVICE_URL || 'http://localhost:4007';
 
 export const WalletController = {
   /**
@@ -55,15 +51,19 @@ export const WalletController = {
         role: 'admin'
       });
 
-      // Call Points Wallet Service to verify social post and update transaction status
+      // Call Social Features Service to update post status to approved
+      const config = getConfig();
       const response = await fetch(
-        `${SOCIAL_FEATURES_SERVICE_URL}/api/admin/social/posts/${postId}/approve`,
+        `${config.services.social}/api/social/posts/${postId}`,
         {
-          method: 'POST',
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${adminJwt}`,
             'Content-Type': 'application/json'
-          }
+          },
+          body: JSON.stringify({
+            status: 'approved'
+          })
         }
       );
 

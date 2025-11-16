@@ -4,6 +4,7 @@ import { ApiError } from '../middleware/error.js';
 import { createUser, findUserByEmail, findUserById, updateUserApprovalStatus, updateUserStatus } from '../models/user.model.js';
 import { signToken } from '../utils/jwt.js';
 import { getPool } from '../db/pool.js';
+import { getConfig } from '../config/index.js';
 import bcrypt from 'bcryptjs';
 
 const approveSchema = z.object({
@@ -161,8 +162,8 @@ export async function approveMerchantApplication(req, res, next) {
     const { applicationId } = req.params;
     const { adminNotes } = approveSchema.parse(req.body || {});
 
-    const merchantServiceUrl = process.env.MERCHANT_SERVICE_URL || 'http://localhost:4003';
-    const url = `${merchantServiceUrl}/api/admin/applications/${applicationId}/review`;
+    const config = getConfig();
+    const url = `${config.services.merchant}/api/admin/applications/${applicationId}/review`;
 
     const authHeader = req.headers['authorization'] || '';
 
@@ -299,11 +300,11 @@ export async function getUserApprovalStatus(req, res, next) {
     }
 
     // Check if user has Instagram connected
-    const socialServiceUrl = process.env.SOCIAL_SERVICE_URL || 'http://localhost:4007';
+    const config = getConfig();
     let hasInstagram = false;
     try {
       const socialResponse = await fetch(
-        `${socialServiceUrl}/api/social/accounts?platform=instagram`,
+        `${config.services.social}/api/social/accounts?platform=instagram`,
         {
           headers: {
             'Authorization': req.headers['authorization'] || ''

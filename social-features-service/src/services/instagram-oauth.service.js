@@ -603,26 +603,29 @@ export class InstagramOAuthService {
       
       try {
         // First, try to find cashback transactions directly (if in same DB)
-        // Look for transactions created in the last 24 hours for these merchants
+        // Look for transactions created in the last 24 hours for these merchants AND this user
         console.log(`[AUTO-LINK] Searching cashback_transactions with:`);
         console.log(`[AUTO-LINK]   - merchant_ids: ${merchantIds.join(', ')}`);
+        console.log(`[AUTO-LINK]   - customer_id (user_id): ${userId}`);
         console.log(`[AUTO-LINK]   - status: pending`);
         console.log(`[AUTO-LINK]   - time window: ${timeWindowStart.toISOString()} to ${now.toISOString()}`);
-        console.log(`[AUTO-LINK]   - Note: Filtering by merchant_id only (not customer_id)`);
+        console.log(`[AUTO-LINK]   - Note: Filtering by BOTH merchant_id AND customer_id`);
         
         const cashbackQuery = `
           SELECT ct.id, ct.created_at, ct.merchant_id, ct.status, ct.customer_id
           FROM cashback_transactions ct
           WHERE ct.merchant_id = ANY($1::uuid[])
+            AND ct.customer_id = $2
             AND ct.status = 'pending'
-            AND ct.created_at >= $2
-            AND ct.created_at <= $3
+            AND ct.created_at >= $3
+            AND ct.created_at <= $4
           ORDER BY ct.created_at DESC
           LIMIT 10
         `;
         
         const cashbackResult = await pool.query(cashbackQuery, [
           merchantIds,
+          userId, // Filter by user_id
           timeWindowStart, // 24 hours ago
           now // Current time
         ]);
@@ -639,7 +642,7 @@ export class InstagramOAuthService {
           matchingTransactionId = cashbackResult.rows[0].id;
           console.log(`[AUTO-LINK] ✅ Found cashback transaction: ${matchingTransactionId}`);
         } else {
-          // Debug: Check if there are any transactions for this merchant without time/status filters
+          // Debug: Check if there are any transactions for this merchant and user without time/status filters
           const debugQuery = `
             SELECT COUNT(*) as count, 
                    MIN(created_at) as earliest, 
@@ -648,8 +651,9 @@ export class InstagramOAuthService {
                    array_agg(DISTINCT customer_id) as customer_ids
             FROM cashback_transactions
             WHERE merchant_id = ANY($1::uuid[])
+              AND customer_id = $2
           `;
-          const debugResult = await pool.query(debugQuery, [merchantIds]);
+          const debugResult = await pool.query(debugQuery, [merchantIds, userId]);
           if (debugResult.rows[0].count > 0) {
             console.log(`[AUTO-LINK] ⚠️ Found ${debugResult.rows[0].count} transaction(s) for merchant(s), but none match filters:`);
             console.log(`[AUTO-LINK]   - Earliest: ${debugResult.rows[0].earliest}`);
@@ -696,14 +700,16 @@ export class InstagramOAuthService {
             // For each reference_id, check if it's a cashback transaction for one of our merchants
             for (const ptRow of pointsResult.rows) {
               if (ptRow.reference_id) {
-                console.log(`[AUTO-LINK] Verifying reference_id ${ptRow.reference_id} against merchant_ids [${merchantIds.join(', ')}]`);
-                // Try to verify this is a cashback transaction for one of our merchants
+                console.log(`[AUTO-LINK] Verifying reference_id ${ptRow.reference_id} against merchant_ids [${merchantIds.join(', ')}] and customer_id ${userId}`);
+                // Try to verify this is a cashback transaction for one of our merchants AND this user
                 const verifyQuery = `
                   SELECT id, merchant_id, customer_id, status, created_at 
                   FROM cashback_transactions
-                  WHERE id = $1 AND merchant_id = ANY($2::uuid[])
+                  WHERE id = $1 
+                    AND merchant_id = ANY($2::uuid[])
+                    AND customer_id = $3
                 `;
-                const verifyResult = await pool.query(verifyQuery, [ptRow.reference_id, merchantIds]);
+                const verifyResult = await pool.query(verifyQuery, [ptRow.reference_id, merchantIds, userId]);
                 
                 if (verifyResult.rows.length > 0) {
                   console.log(`[AUTO-LINK] ✅ Verified transaction ${ptRow.reference_id} belongs to merchant ${verifyResult.rows[0].merchant_id}`);
@@ -760,24 +766,26 @@ export class InstagramOAuthService {
         }
       }
 
-      // If we found a matching transaction, check if another post is already linked to a transaction for this merchant in the last 24 hours
+      // If we found a matching transaction, check if another post is already linked to a transaction for this merchant and user in the last 24 hours
       if (matchingTransactionId) {
-        // Check if there's already a post linked to a transaction for this merchant in the last 24 hours
+        // Check if there's already a post linked to a transaction for this merchant AND user in the last 24 hours
         const checkExistingLinkQuery = `
-          SELECT sp.id as post_id, sp.original_transaction_id, sp.created_at, ct.merchant_id
+          SELECT sp.id as post_id, sp.original_transaction_id, sp.created_at, ct.merchant_id, ct.customer_id
           FROM social_posts sp
           JOIN cashback_transactions ct ON sp.original_transaction_id::uuid = ct.id
           WHERE ct.merchant_id = ANY($1::uuid[])
+            AND ct.customer_id = $2
             AND sp.original_transaction_id IS NOT NULL
-            AND sp.id != $2
-            AND sp.created_at >= $3
-            AND sp.created_at <= $4
+            AND sp.id != $3
+            AND sp.created_at >= $4
+            AND sp.created_at <= $5
           ORDER BY sp.created_at DESC
           LIMIT 1
         `;
         
         const existingLinkResult = await pool.query(checkExistingLinkQuery, [
           merchantIds,
+          userId, // Filter by user_id
           postId,
           timeWindowStart, // 24 hours ago
           now // Current time
