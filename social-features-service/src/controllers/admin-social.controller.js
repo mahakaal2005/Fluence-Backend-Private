@@ -9,7 +9,7 @@ import { signToken } from '../config/jwt.js';
  * Sanitize text by removing replacement characters and invalid UTF-8 sequences
  */
 
-const CASHBACK_BUDGET_SERVICE_URL = process.env.CASHBACK_BUDGET_SERVICE_URL || 'http://localhost:4002';
+const CASHBACK_BUDGET_SERVICE_URL = process.env.CASHBACK_BUDGET_SERVICE_URL || 'http://cashback-budget-service:4002';
 
 function sanitizeText(text) {
   if (!text) return text;
